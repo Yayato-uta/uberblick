@@ -91,7 +91,7 @@ export function Overview({
           value={eur(d.mSaving)}
           tone="blue"
           icon={PiggyBank}
-          note="Wohnsparbuch, Revolut and anything else you set aside."
+          note="Savings, investments and anything else you set aside."
         />
         <Stat
           label="Riding on other people"

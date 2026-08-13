@@ -57,7 +57,7 @@ export function Assets({
       <AssetForm onAdd={onAdd} savingItems={savingItems} />
 
       {d.assets.length === 0 ? (
-        <Empty title="Nothing recorded yet" hint="Start with what's in the Wohnsparbuch today." />
+        <Empty title="Nothing recorded yet" hint="Start with whatever is in your savings account today." />
       ) : (
         <>
           <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -234,7 +234,7 @@ function AssetForm({
           <TextInput
             value={a.name}
             onChange={(e) => setA((p) => ({ ...p, name: e.target.value }))}
-            placeholder="Wohnsparbuch, Revolut, car…"
+            placeholder="Savings account, investments, car…"
           />
         </Field>
         <Field label="Kind">

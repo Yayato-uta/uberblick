@@ -126,7 +126,7 @@ export function ItemSheet({
           <TextInput
             value={f.name}
             onChange={(e) => set({ name: e.target.value })}
-            placeholder="Miete, Netflix, loan…"
+            placeholder="Rent, phone, loan…"
             autoFocus
           />
         </Field>
@@ -211,7 +211,7 @@ export function ItemSheet({
                 <TextInput
                   value={f.reimbWho}
                   onChange={(e) => set({ reimbWho: e.target.value })}
-                  placeholder="Fiancé, sister…"
+                  placeholder="Partner, housemate…"
                 />
               </Field>
               <Field

@@ -81,28 +81,34 @@ export function emptyData(): Data {
   };
 }
 
-/** Seed numbers so a first-time opener can see what the thing does. */
+/**
+ * Illustrative numbers, so a first-time opener sees what the thing does before
+ * typing anything. Deliberately generic and rounded — nobody's actual budget —
+ * while still exercising every case the app exists to show: pay that arrives in
+ * yearly lumps, bills that don't fall due monthly, a financing line that ends
+ * soon, and two lines somebody else pays back.
+ */
 export function sampleItems(): Item[] {
   const T = nowIdx();
   return [
     { id: uid(), name: "Salary (net)", kind: "income", cat: "Salary", amount: 2400, freq: "monthly", first: toYM(T - 12), last: "" },
-    { id: uid(), name: "Urlaubsgeld", kind: "income", cat: "Salary", amount: 1400, freq: "yearly", first: toYM(T - 12 + 5), last: "" },
-    { id: uid(), name: "Weihnachtsgeld", kind: "income", cat: "Salary", amount: 1400, freq: "yearly", first: toYM(T - 12 + 10), last: "" },
+    { id: uid(), name: "Holiday pay", kind: "income", cat: "Salary", amount: 1400, freq: "yearly", first: toYM(T - 12 + 5), last: "" },
+    { id: uid(), name: "Year-end pay", kind: "income", cat: "Salary", amount: 1400, freq: "yearly", first: toYM(T - 12 + 10), last: "" },
 
-    { id: uid(), name: "Miete + Betriebskosten", kind: "expense", cat: "Home", amount: 890, freq: "monthly", first: toYM(T - 12), last: "" },
-    { id: uid(), name: "Groceries & household", kind: "expense", cat: "Food", amount: 420, freq: "monthly", first: toYM(T - 12), last: "" },
-    { id: uid(), name: "Wien Energie", kind: "expense", cat: "Utilities", amount: 195, freq: "quarterly", first: toYM(T - 1), last: "" },
-    { id: uid(), name: "Internet + mobile", kind: "expense", cat: "Phone & internet", amount: 45, freq: "monthly", first: toYM(T - 12), last: "" },
-    { id: uid(), name: "ORF-Beitrag", kind: "expense", cat: "Subscriptions", amount: 46, freq: "quarterly", first: toYM(T), last: "" },
-    { id: uid(), name: "Haushaltsversicherung", kind: "expense", cat: "Insurance", amount: 260, freq: "yearly", first: toYM(T + 1), last: "" },
-    { id: uid(), name: "Jahreskarte Wiener Linien", kind: "expense", cat: "Transport", amount: 365, freq: "yearly", first: toYM(T + 5), last: "" },
+    { id: uid(), name: "Rent & service charges", kind: "expense", cat: "Home", amount: 900, freq: "monthly", first: toYM(T - 12), last: "" },
+    { id: uid(), name: "Groceries & household", kind: "expense", cat: "Food", amount: 400, freq: "monthly", first: toYM(T - 12), last: "" },
+    { id: uid(), name: "Electricity & gas", kind: "expense", cat: "Utilities", amount: 200, freq: "quarterly", first: toYM(T - 1), last: "" },
+    { id: uid(), name: "Internet & mobile", kind: "expense", cat: "Phone & internet", amount: 45, freq: "monthly", first: toYM(T - 12), last: "" },
+    { id: uid(), name: "Broadcasting fee", kind: "expense", cat: "Subscriptions", amount: 45, freq: "quarterly", first: toYM(T), last: "" },
+    { id: uid(), name: "Home insurance", kind: "expense", cat: "Insurance", amount: 250, freq: "yearly", first: toYM(T + 1), last: "" },
+    { id: uid(), name: "Annual transport pass", kind: "expense", cat: "Transport", amount: 400, freq: "yearly", first: toYM(T + 5), last: "" },
 
-    { id: uid(), name: "Laptop financing", kind: "expense", cat: "Debt & financing", amount: 49, freq: "monthly", first: toYM(T - 9), last: toYM(T + 2) },
-    { id: uid(), name: "Loan (for fiancé)", kind: "expense", cat: "Debt & financing", amount: 320, freq: "monthly", first: toYM(T - 5), last: toYM(T + 31), reimb: { who: "Fiancé", amount: 320 } },
-    { id: uid(), name: "Sister's phone financing", kind: "expense", cat: "Family", amount: 32, freq: "monthly", first: toYM(T - 3), last: toYM(T + 20), reimb: { who: "Sister", amount: 32 } },
+    { id: uid(), name: "Appliance instalments", kind: "expense", cat: "Debt & financing", amount: 50, freq: "monthly", first: toYM(T - 9), last: toYM(T + 2) },
+    { id: uid(), name: "Shared loan", kind: "expense", cat: "Debt & financing", amount: 300, freq: "monthly", first: toYM(T - 5), last: toYM(T + 31), reimb: { who: "Partner", amount: 300 } },
+    { id: uid(), name: "Second phone contract", kind: "expense", cat: "Family", amount: 30, freq: "monthly", first: toYM(T - 3), last: toYM(T + 20), reimb: { who: "Family member", amount: 30 } },
 
-    { id: uid(), name: "Wohnsparbuch", kind: "saving", cat: "Savings", amount: 100, freq: "monthly", first: toYM(T - 12), last: "" },
-    { id: uid(), name: "Revolut — investing", kind: "saving", cat: "Investing", amount: 150, freq: "monthly", first: toYM(T - 12), last: "" },
+    { id: uid(), name: "Savings plan", kind: "saving", cat: "Savings", amount: 100, freq: "monthly", first: toYM(T - 12), last: "" },
+    { id: uid(), name: "Investment plan", kind: "saving", cat: "Investing", amount: 150, freq: "monthly", first: toYM(T - 12), last: "" },
   ];
 }
 
@@ -110,8 +116,8 @@ export function sampleData(): Data {
   return {
     ...emptyData(),
     items: sampleItems(),
-    opening: -1200,
-    overdraft: 6000,
+    opening: -1000,
+    overdraft: 5000,
     sample: true,
   };
 }
