@@ -1,0 +1,130 @@
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import type { Item, Kind } from "../types";
+import { FREQ, KIND } from "../lib/constants";
+import { eur } from "../lib/format";
+import { fromYM, longLabel, monthlyEquivalent } from "../lib/month";
+import { Btn, Empty, IconBtn, TEXT, cx } from "../components/ui";
+
+const ORDER: Kind[] = ["income", "expense", "saving"];
+
+export function Items({
+  items,
+  start,
+  onAdd,
+  onEdit,
+  onDelete,
+}: {
+  items: Item[];
+  start: number;
+  onAdd: () => void;
+  onEdit: (it: Item) => void;
+  onDelete: (it: Item) => void;
+}) {
+  return (
+    <div className="mt-6">
+      <div className="mb-4">
+        <Btn tone="solid" onClick={onAdd}>
+          <Plus size={14} /> Add a line
+        </Btn>
+      </div>
+
+      {items.length === 0 && (
+        <Empty
+          title="Nothing here yet"
+          hint="Start with your rent and your salary — the rest is easier once those two are in."
+        />
+      )}
+
+      {ORDER.map((kind) => {
+        const rows = items.filter((i) => i.kind === kind);
+        if (!rows.length) return null;
+        const tone = KIND[kind].tone === "red" ? "red" : KIND[kind].tone === "green" ? "green" : "blue";
+        return (
+          <section key={kind} className="mb-6">
+            <h2
+              className={cx(
+                "mb-2 border-b border-rule pb-1 font-mono text-xs uppercase tracking-widest",
+                TEXT[tone],
+              )}
+            >
+              {KIND[kind].label} · {rows.length}
+            </h2>
+            <div className="space-y-px">
+              {rows.map((it) => (
+                <Row
+                  key={it.id}
+                  it={it}
+                  start={start}
+                  tone={tone}
+                  onEdit={() => onEdit(it)}
+                  onDelete={() => onDelete(it)}
+                />
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function Row({
+  it,
+  start,
+  tone,
+  onEdit,
+  onDelete,
+}: {
+  it: Item;
+  start: number;
+  tone: "red" | "green" | "blue";
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const lastIdx = fromYM(it.last);
+  const done = lastIdx !== null && lastIdx < start;
+  const perMonth = monthlyEquivalent(it.amount, it.freq);
+
+  return (
+    <div
+      className={cx(
+        "u-card flex flex-wrap items-center gap-3 px-3 py-3",
+        done && "opacity-45",
+      )}
+    >
+      <div className="min-w-[9rem] flex-1">
+        <div className="text-sm font-medium">{it.name}</div>
+        <div className="mt-0.5 font-mono text-xs text-soft">
+          {it.cat} · {FREQ[it.freq].label.toLowerCase()}
+          {lastIdx !== null && (
+            <>
+              {" "}
+              · {done ? "finished" : "last"} {longLabel(lastIdx)}
+            </>
+          )}
+        </div>
+        {it.reimb && (
+          <div className="mt-1 inline-block border border-ochre px-1.5 py-0.5 font-mono text-xs text-ochre">
+            {it.reimb.who} sends back {eur(it.reimb.amount)}
+          </div>
+        )}
+      </div>
+
+      <div className="text-right">
+        <div className={cx("font-mono tabular-nums", TEXT[tone])}>{eur(it.amount, 2)}</div>
+        {it.freq !== "monthly" && it.freq !== "oneoff" && (
+          <div className="font-mono text-xs text-soft">= {eur(perMonth)}/mo</div>
+        )}
+      </div>
+
+      <div className="flex gap-1">
+        <IconBtn onClick={onEdit} title="Edit" aria-label={`Edit ${it.name}`}>
+          <Pencil size={16} />
+        </IconBtn>
+        <IconBtn tone="red" onClick={onDelete} title="Delete" aria-label={`Delete ${it.name}`}>
+          <Trash2 size={16} />
+        </IconBtn>
+      </div>
+    </div>
+  );
+}

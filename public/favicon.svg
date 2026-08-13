@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" fill="#E8EDE7"/>
+  <rect x="4.5" y="4.5" width="55" height="55" fill="none" stroke="#16211D" stroke-width="3"/>
+  <rect x="9" y="9" width="46" height="46" fill="none" stroke="#C3CDC0" stroke-width="1"/>
+  <text x="32" y="45" text-anchor="middle" font-family="ui-monospace, Consolas, monospace"
+        font-size="38" fill="#16211D">Ü</text>
+</svg>

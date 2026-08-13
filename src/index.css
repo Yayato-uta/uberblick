@@ -1,0 +1,117 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fallback palette so the first paint before the theme provider runs is
+   already paper-and-ink rather than white. Values mirror LIGHT in
+   src/lib/palette.ts — keep them in step. */
+:root {
+  --u-paper: #e8ede7;
+  --u-card: #f9fbf7;
+  --u-ink: #16211d;
+  --u-soft: #5c6b63;
+  --u-rule: #c3cdc0;
+  --u-red: #a32b21;
+  --u-green: #17594a;
+  --u-blue: #1d4e89;
+  --u-ochre: #8a5a2b;
+  --u-field: #ffffff;
+  color-scheme: light;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--u-paper);
+    color: var(--u-ink);
+    font-family: theme("fontFamily.sans");
+    /* the app is a plain document; never bounce-scroll the shell on iOS */
+    overscroll-behavior-y: none;
+  }
+
+  /* every figure is tabular, everywhere */
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  select {
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--u-soft) 50%),
+      linear-gradient(135deg, var(--u-soft) 50%, transparent 50%);
+    background-position:
+      calc(100% - 15px) calc(50% + 2px),
+      calc(100% - 10px) calc(50% + 2px);
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+    padding-right: 28px;
+  }
+
+  ::selection {
+    background: var(--u-ink);
+    color: var(--u-card);
+  }
+
+  /* thin, square scrollbars in keeping with the rest */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--u-rule) transparent;
+  }
+  *::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--u-rule);
+  }
+}
+
+@layer components {
+  .u-input {
+    @apply w-full min-h-touch bg-field text-ink border border-rule px-2 py-2 font-mono outline-none;
+    @apply focus:border-ink focus:ring-1 focus:ring-ink;
+    /* 16px on a phone, because iOS zooms the page for anything smaller */
+    @apply text-base sm:text-sm;
+  }
+
+  .u-label {
+    @apply font-mono text-xs uppercase tracking-widest text-soft;
+  }
+
+  .u-card {
+    @apply bg-card border border-rule;
+  }
+
+  /* a table that becomes stacked rows on a phone */
+  .u-hide-mobile {
+    @apply hidden sm:block;
+  }
+}
+
+/* the strip that scrolls sideways on the month picker shouldn't show a bar */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
