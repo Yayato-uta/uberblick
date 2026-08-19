@@ -1,15 +1,28 @@
-import type { Asset, Data, Goal, Item } from "../types";
+import type { Asset, Data, Goal, Item, ReimbExtra } from "../types";
 import { FREQ } from "./constants";
 import { avgOf, forecast, sumOf, type MonthRow } from "./forecast";
-import { fromYM, nowIdx, occursIn, shortLabel } from "./month";
+import { countOccurrences, fromYM, nowIdx, occursIn, shortLabel } from "./month";
+import { reimbBetween, reimbEnd, reimbInMonth, reimbSchedule, type ReimbSchedule } from "./reimb";
 
 /* Everything the views read is computed here, in one pass, from the persisted
    data alone. Views stay dumb; the arithmetic stays testable. */
 
 export interface PersonItem extends Item {
-  /** total still to come from this person on this item, "" end date aside */
+  /** the repayment's own schedule, with blank dates filled from the item */
+  sched: ReimbSchedule;
+  /** total still to come from this person on this item */
   total: number;
-  lastIdx: number | null;
+  /** scheduled instalments still ahead, lump sums aside */
+  paymentsLeft: number;
+  /** last month anything is expected back, null when open-ended */
+  stop: number | null;
+  /** what you pay alone after their repayments stop */
+  alone: number;
+  aloneMonths: number;
+  /** their repayments end but yours never do */
+  aloneOngoing: boolean;
+  /** lump sums still ahead */
+  lumps: ReimbExtra[];
 }
 
 export interface Person {
@@ -17,7 +30,7 @@ export interface Person {
   /** average per month across the horizon, not the per-payment amount */
   monthly: number;
   outstanding: number;
-  /** at least one item has no end date */
+  /** at least one repayment has no end date */
   ongoing: boolean;
   items: PersonItem[];
 }
@@ -43,6 +56,25 @@ export interface EndingRow extends Item {
   perMonth: number;
   /** what actually frees up — net of anything somebody sends back */
   net: number;
+  /** somebody is still repaying it right up to the final payment */
+  stillCovered: boolean;
+}
+
+/** An item whose repayment stops before the expense does — your cost goes UP. */
+export interface CostRiseRow extends Item {
+  who: string;
+  /** last month money comes back */
+  rEnd: number;
+  /** last month you pay, null when the expense is open-ended */
+  iEnd: number | null;
+  /** months from now until the repayments stop */
+  monthsUntil: number;
+  /** monthly outflow that lands on you afterwards */
+  perMonth: number;
+  /** everything you carry alone after that, when the expense has an end */
+  total: number;
+  /** how many payments that is */
+  n: number;
 }
 
 export interface AssetPoint {
@@ -108,6 +140,7 @@ export interface Derived {
 
   ending: EndingRow[];
   freedTotal: number;
+  costRises: CostRiseRow[];
 }
 
 export function derive(data: Data, start: number = nowIdx()): Derived {
@@ -145,28 +178,61 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
   const clearsBy = months.find((m) => m.balance >= 0);
   const worstDrawdown = Math.max(0, -lowest.balance);
 
-  /* ── who pays me back ── */
+  /* ── who pays me back ──
+     Everything here runs off the repayment's own schedule, never the expense's:
+     the two can start and stop in different months, and lump sums land outside
+     both. */
   const map = new Map<string, Person>();
   for (const it of items) {
     if (it.kind !== "expense" || !it.reimb) continue;
-    const who = it.reimb.who || "Someone";
+    const sched = reimbSchedule(it)!;
+    const who = sched.who;
     let p = map.get(who);
     if (!p) {
       p = { who, monthly: 0, outstanding: 0, ongoing: false, items: [] };
       map.set(who, p);
     }
-    const lastIdx = fromYM(it.last);
+
+    const stop = reimbEnd(it);
+    const iEnd = fromYM(it.last);
+
+    // everything still to come back
     let total = 0;
-    if (lastIdx === null) {
-      p.ongoing = true;
-    } else {
-      for (let i = start; i <= lastIdx; i++) if (occursIn(it, i)) total += it.reimb.amount;
+    if (stop === null) p.ongoing = true;
+    else total = reimbBetween(it, start, stop);
+
+    // what you carry alone once their repayments stop
+    let alone = 0;
+    let aloneMonths = 0;
+    if (stop !== null && iEnd !== null && iEnd > stop) {
+      for (let i = stop + 1; i <= iEnd; i++) {
+        if (occursIn(it, i)) {
+          alone += it.amount;
+          aloneMonths++;
+        }
+      }
     }
+    const aloneOngoing = stop !== null && iEnd === null;
+
     let overHorizon = 0;
-    for (const m of months) if (occursIn(it, m.idx)) overHorizon += it.reimb.amount;
+    for (const m of months) overHorizon += reimbInMonth(it, m.idx);
+
     p.monthly += months.length ? overHorizon / months.length : 0;
     p.outstanding += total;
-    p.items.push({ ...it, total, lastIdx });
+    p.items.push({
+      ...it,
+      sched,
+      total,
+      paymentsLeft: stop === null ? 0 : countOccurrences(sched, start, stop),
+      stop,
+      alone,
+      aloneMonths,
+      aloneOngoing,
+      lumps: sched.extras.filter((e) => {
+        const i = fromYM(e.month);
+        return i !== null && i >= start;
+      }),
+    });
   }
   const people = [...map.values()].sort((a, b) => b.monthly - a.monthly);
   const passThrough = people.reduce((s, p) => s + p.monthly, 0);
@@ -213,10 +279,11 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
     const lastIdx = fromYM(it.last);
     if (lastIdx === null || lastIdx < start) return s;
     let t = 0;
-    for (let i = start; i <= lastIdx; i++) {
-      if (occursIn(it, i)) t += it.amount - (it.reimb ? it.reimb.amount : 0);
-    }
-    return s + t;
+    for (let i = start; i <= lastIdx; i++) if (occursIn(it, i)) t += it.amount;
+    // repayments can outlast the expense, so net them off over the longer span
+    const until = Math.max(lastIdx, reimbEnd(it) ?? lastIdx);
+    t -= reimbBetween(it, start, until);
+    return s + Math.max(0, t);
   }, 0);
 
   const netWorthNow = assetsNow + (Number(data.opening) || 0) - committed;
@@ -230,16 +297,67 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
       if (lastIdx === null || lastIdx < start) return [];
       const perMonth =
         it.freq === "monthly" ? it.amount : it.amount * (FREQ[it.freq].per_year / 12);
-      const back = it.reimb
-        ? it.freq === "monthly"
-          ? it.reimb.amount
-          : it.reimb.amount * (FREQ[it.freq].per_year / 12)
-        : 0;
-      return [{ ...it, lastIdx, monthsLeft: lastIdx - start + 1, perMonth, net: perMonth - back }];
+      /* Only a repayment that runs to the very last payment keeps money from
+         freeing up. One that stops earlier has already handed you the full
+         amount — that case belongs to "cost goes up", and what frees up here
+         is the whole payment. */
+      const sched = reimbSchedule(it);
+      const rEnd = reimbEnd(it);
+      const stillCovered = !!sched && (rEnd === null || rEnd >= lastIdx);
+      const back = stillCovered ? sched!.amount * (FREQ[sched!.freq].per_year / 12) : 0;
+      return [
+        {
+          ...it,
+          lastIdx,
+          monthsLeft: lastIdx - start + 1,
+          perMonth,
+          net: perMonth - back,
+          stillCovered,
+        },
+      ];
     })
     .sort((a, b) => a.lastIdx - b.lastIdx);
 
   const freedTotal = ending.reduce((s, i) => s + Math.max(0, i.net), 0);
+
+  /* ── repayments that stop before the expense does ──
+     The unpleasant surprise: the direct debit carries on, the money coming
+     back does not. Kept from a month ago so a repayment that has only just
+     stopped is still on the list. */
+  const costRises: CostRiseRow[] = items
+    .flatMap((it) => {
+      if (it.kind !== "expense" || !it.reimb) return [];
+      const rEnd = reimbEnd(it);
+      if (rEnd === null || rEnd < start - 1) return [];
+      const iEnd = fromYM(it.last);
+      if (iEnd !== null && rEnd >= iEnd) return [];
+
+      const perMonth =
+        it.freq === "monthly" ? it.amount : it.amount * (FREQ[it.freq].per_year / 12);
+      let total = 0;
+      let n = 0;
+      if (iEnd !== null) {
+        for (let i = rEnd + 1; i <= iEnd; i++) {
+          if (occursIn(it, i)) {
+            total += it.amount;
+            n++;
+          }
+        }
+      }
+      return [
+        {
+          ...it,
+          who: reimbSchedule(it)!.who,
+          rEnd,
+          iEnd,
+          monthsUntil: rEnd - start + 1,
+          perMonth,
+          total,
+          n,
+        },
+      ];
+    })
+    .sort((a, b) => a.rEnd - b.rEnd);
 
   return {
     start,
@@ -278,6 +396,7 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
     netWorthEnd,
     ending,
     freedTotal,
+    costRises,
   };
 }
 

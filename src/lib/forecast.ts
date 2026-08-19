@@ -1,5 +1,6 @@
 import type { Item } from "../types";
 import { occursIn, shortLabel } from "./month";
+import { reimbInMonth } from "./reimb";
 
 export interface MonthRow {
   /** absolute month index */
@@ -18,7 +19,7 @@ export interface MonthRow {
   net: number;
   /** balance at month end, rounded to the euro for display */
   balance: number;
-  /** every item that falls due this month */
+  /** every item that touches this month — money out, money back, or both */
   hits: Item[];
 }
 
@@ -36,6 +37,10 @@ export interface ForecastInput {
  * Overdraft interest is charged on whatever is still negative at month end and
  * therefore compounds — deliberately, because the point is to show what an
  * overdraft costs when it lingers.
+ *
+ * A repayment runs on its own clock, so a month can carry money coming back
+ * with no payment going out — a one-off paid in March, repaid monthly for the
+ * rest of the year. Those months count, and the item belongs in `hits`.
  */
 export function forecast({ items, opening, odRate, horizon, start }: ForecastInput): MonthRow[] {
   const rows: MonthRow[] = [];
@@ -52,8 +57,15 @@ export function forecast({ items, opening, odRate, horizon, start }: ForecastInp
     const hits: Item[] = [];
 
     for (const it of items) {
-      if (!occursIn(it, idx)) continue;
+      const back = it.kind === "expense" ? reimbInMonth(it, idx) : 0;
+      const due = occursIn(it, idx);
+      if (!due && back === 0) continue;
       hits.push(it);
+      if (!due) {
+        // money back in a month with nothing going out
+        reimb += back;
+        continue;
+      }
       if (it.kind === "income") {
         income += it.amount;
       } else if (it.kind === "saving") {
@@ -61,7 +73,7 @@ export function forecast({ items, opening, odRate, horizon, start }: ForecastInp
       } else {
         expense += it.amount;
         if (it.freq !== "monthly") irregular += it.amount;
-        if (it.reimb) reimb += it.reimb.amount;
+        reimb += back;
       }
     }
 

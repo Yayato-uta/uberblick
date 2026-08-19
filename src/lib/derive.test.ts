@@ -1,18 +1,35 @@
 import { describe, expect, it } from "vitest";
-import type { Data, Item } from "../types";
+import type { Data, Item, Reimb } from "../types";
 import { derive } from "./derive";
 import { emptyData } from "./constants";
 import { fromYM, toYM } from "./month";
 
 const START = fromYM("2026-08")!;
 
-const item = (over: Partial<Item> & Pick<Item, "id" | "name" | "kind" | "amount">): Item => ({
-  cat: "Other",
-  freq: "monthly",
-  first: "2026-08",
-  last: "",
-  ...over,
-});
+/* A repayment may be given as just {who, amount} — the shape the earliest
+   backups used, meaning "follows the expense exactly". Filling it out here is
+   what the migration does on load, so these tests keep asserting the old
+   behaviour against the new model. */
+type LooseReimb = { who: string; amount: number } & Partial<Reimb>;
+type Loose = Omit<Partial<Item>, "reimb"> & { reimb?: LooseReimb };
+
+function fill(o: Omit<Item, "reimb"> & { reimb?: LooseReimb }): Item {
+  const { reimb, ...rest } = o;
+  if (!reimb) return rest;
+  return {
+    ...rest,
+    reimb: { freq: rest.freq, first: rest.first, last: rest.last, extras: [], ...reimb },
+  };
+}
+
+const item = (over: Loose & Pick<Item, "id" | "name" | "kind" | "amount">): Item =>
+  fill({
+    cat: "Other",
+    freq: "monthly",
+    first: "2026-08",
+    last: "",
+    ...over,
+  });
 
 const plan = (over: Partial<Data> = {}): Data => ({ ...emptyData(), ...over });
 
@@ -291,3 +308,130 @@ describe("people who pay you back", () => {
     expect(p.ongoing).toBe(false);
   });
 });
+
+describe("when a repayment stops before the expense does", () => {
+  /* Twelve payments of 400 from Aug 2026; Sister covers only the first three.
+     The brief calls this the unpleasant surprise, and it has to read the right
+     way round in both lists. */
+  const shared = item({
+    id: "shared",
+    name: "Shared loan",
+    kind: "expense",
+    amount: 400,
+    first: toYM(START),
+    last: toYM(START + 11),
+    reimb: {
+      who: "Sister",
+      amount: 400,
+      freq: "monthly",
+      first: toYM(START),
+      last: toYM(START + 2),
+      extras: [],
+    },
+  });
+
+  const d = derive(plan({ horizon: 12, items: [shared] }), START);
+
+  it("names the month their share runs out", () => {
+    expect(d.costRises).toHaveLength(1);
+    expect(d.costRises[0].rEnd).toBe(START + 2);
+    expect(d.costRises[0].monthsUntil).toBe(3);
+    expect(d.costRises[0].who).toBe("Sister");
+  });
+
+  it("adds up the payments that land on you afterwards", () => {
+    expect(d.costRises[0].n).toBe(9);
+    expect(d.costRises[0].total).toBe(3600);
+    expect(d.costRises[0].perMonth).toBe(400);
+  });
+
+  it("frees up the FULL amount when the expense finally ends", () => {
+    // by then nobody is repaying it, so the whole 400 comes back to you
+    expect(d.ending[0].stillCovered).toBe(false);
+    expect(d.ending[0].net).toBe(400);
+    expect(d.freedTotal).toBe(400);
+  });
+
+  it("counts only their three payments as still to come", () => {
+    expect(d.people[0].outstanding).toBe(1200);
+    expect(d.people[0].items[0].paymentsLeft).toBe(3);
+    expect(d.people[0].items[0].aloneMonths).toBe(9);
+    expect(d.people[0].items[0].alone).toBe(3600);
+  });
+
+  it("leaves the rest of the loan on your committed total", () => {
+    expect(d.committed).toBe(12 * 400 - 3 * 400);
+  });
+});
+
+describe("when somebody covers an expense right to its end", () => {
+  const covered = item({
+    id: "phone",
+    name: "Second phone",
+    kind: "expense",
+    amount: 30,
+    first: toYM(START),
+    last: toYM(START + 11),
+    reimb: { who: "Sister", amount: 30 },
+  });
+
+  const d = derive(plan({ horizon: 12, items: [covered] }), START);
+
+  it("frees up nothing when it ends, and says who was covering it", () => {
+    expect(d.ending[0].stillCovered).toBe(true);
+    expect(d.ending[0].net).toBe(0);
+    expect(d.freedTotal).toBe(0);
+  });
+
+  it("never turns up under cost goes up", () => {
+    expect(d.costRises).toHaveLength(0);
+  });
+
+  it("costs nothing and commits you to nothing", () => {
+    expect(d.netCost).toBe(0);
+    expect(d.committed).toBe(0);
+  });
+});
+
+describe("a one-off repaid over the following year", () => {
+  const fronted = item({
+    id: "fronted",
+    name: "Deposit fronted",
+    kind: "expense",
+    amount: 3600,
+    freq: "oneoff",
+    first: toYM(START),
+    last: toYM(START),
+    reimb: {
+      who: "Friend",
+      amount: 300,
+      freq: "monthly",
+      first: toYM(START + 1),
+      last: toYM(START + 12),
+      extras: [{ month: toYM(START + 4), amount: 600 }],
+    },
+  });
+
+  const d = derive(plan({ horizon: 12, items: [fronted] }), START);
+
+  it("counts the lump sum in what is still to come", () => {
+    // twelve instalments plus the 600 dropped in month four
+    expect(d.people[0].outstanding).toBe(3600 + 600);
+    expect(d.people[0].items[0].lumps).toHaveLength(1);
+  });
+
+  it("averages the repayments across the horizon, not per payment", () => {
+    // eleven instalments and one lump sum fall inside the twelve months shown
+    expect(d.people[0].monthly).toBeCloseTo((11 * 300 + 600) / 12, 6);
+  });
+
+  it("puts the expense's own end behind it, so nothing is freed up later", () => {
+    expect(d.ending).toHaveLength(1);
+    expect(d.ending[0].perMonth).toBe(0);
+  });
+
+  it("never lets the repayment push committed below zero", () => {
+    expect(d.committed).toBe(0);
+  });
+});
+

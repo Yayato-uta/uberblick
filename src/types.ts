@@ -10,10 +10,30 @@ export type Horizon = 12 | 18 | 24;
 /** "YYYY-MM", or "" where an open end is allowed. */
 export type YM = string;
 
+/** A lump sum somebody drops in on top of the regular rate. */
+export interface ReimbExtra {
+  /** "YYYY-MM" */
+  month: YM;
+  amount: number;
+}
+
+/**
+ * A repayment runs on its OWN clock — it is not tied to the expense it covers.
+ * A one-off paid out in March can come back in twelve monthly instalments, and
+ * somebody's share of a loan can finish long before the loan does.
+ */
 export interface Reimb {
   who: string;
-  /** per occurrence, always positive */
+  /** per repayment instalment, always positive */
   amount: number;
+  /** INDEPENDENT of the expense's own frequency */
+  freq: Freq;
+  /** "YYYY-MM"; blank falls back to the expense's first */
+  first: YM;
+  /** "YYYY-MM"; blank falls back to the expense's last */
+  last: YM;
+  /** ad-hoc lump sums outside the regular rate */
+  extras: ReimbExtra[];
 }
 
 export interface Item {

@@ -4,7 +4,8 @@ import type { Item } from "../types";
 import type { Derived } from "../lib/derive";
 import { FREQ } from "../lib/constants";
 import { eur } from "../lib/format";
-import { fullLabel } from "../lib/month";
+import { fromYM, fullLabel, occursIn } from "../lib/month";
+import { reimbInMonth, reimbSchedule } from "../lib/reimb";
 import { BORDER_T, Empty, Stat, TEXT, cx, type Tone } from "../components/ui";
 
 export function MonthByMonth({
@@ -33,9 +34,13 @@ export function MonthByMonth({
   const saving = M.hits.filter((i) => i.kind === "saving");
 
   const yours = M.expense - M.reimb;
+  /* Repayments run on their own clock, so a month can take back more than it
+     paid out — the share is capped for the bar, and read differently below. */
   const share = M.expense > 0 ? (M.reimb / M.expense) * 100 : 0;
+  const barShare = Math.min(100, Math.max(0, share));
+  const overCovered = yours < -0.5;
   const irregularYours = [...periodic, ...once].reduce(
-    (s, i) => s + i.amount - (i.reimb ? i.reimb.amount : 0),
+    (s, i) => s + (occursIn(i, M.idx) ? i.amount : 0) - reimbInMonth(i, M.idx),
     0,
   );
 
@@ -90,13 +95,21 @@ export function MonthByMonth({
           label="Carried for other people"
           value={eur(M.reimb)}
           tone="ochre"
-          note={`${Math.round(share)}% of the outflow isn't really your expense.`}
+          note={
+            overCovered
+              ? "More comes back this month than goes out."
+              : `${Math.round(barShare)}% of the outflow isn't really your expense.`
+          }
         />
         <Stat
           label="Actually your expense"
           value={eur(yours)}
-          tone="red"
-          note="What this month genuinely costs you."
+          tone={overCovered ? "green" : "red"}
+          note={
+            overCovered
+              ? "Repayments outrun the bills — the month pays you."
+              : "What this month genuinely costs you."
+          }
         />
         <Stat
           label="Ends the month"
@@ -110,12 +123,13 @@ export function MonthByMonth({
       {M.expense > 0 && (
         <div className="mb-6">
           <div className="flex h-5 w-full border border-rule">
-            <div className="bg-red opacity-75" style={{ width: `${100 - share}%` }} />
-            <div className="bg-ochre opacity-75" style={{ width: `${share}%` }} />
+            <div className="bg-red opacity-75" style={{ width: `${100 - barShare}%` }} />
+            <div className="bg-ochre opacity-75" style={{ width: `${barShare}%` }} />
           </div>
           <div className="mt-1 flex justify-between font-mono text-xs text-soft">
             <span>
-              <span className="text-red">▬</span> yours {eur(yours)}
+              <span className={overCovered ? "text-green" : "text-red"}>▬</span> yours{" "}
+              {eur(yours)}
             </span>
             <span>
               <span className="text-ochre">▬</span> passing through {eur(M.reimb)}
@@ -134,6 +148,7 @@ export function MonthByMonth({
         title="Every month"
         note="the baseline you pay no matter what"
         rows={every}
+        idx={M.idx}
         icon={Repeat}
         tone="red"
       />
@@ -141,6 +156,7 @@ export function MonthByMonth({
         title="Periodic — falls due this month"
         note="recurring, but not every month"
         rows={periodic}
+        idx={M.idx}
         icon={CalendarClock}
         tone="ochre"
       />
@@ -148,6 +164,7 @@ export function MonthByMonth({
         title="One-time only"
         note="happens once and never again"
         rows={once}
+        idx={M.idx}
         icon={Zap}
         tone="blue"
       />
@@ -199,18 +216,21 @@ function BreakdownGroup({
   title,
   note,
   rows,
+  idx,
   icon: Icon,
   tone,
 }: {
   title: string;
   note?: string;
   rows: Item[];
+  /** absolute month index — a row may be here for a repayment alone */
+  idx: number;
   icon: typeof Repeat;
   tone: Tone;
 }) {
   if (!rows.length) return null;
-  const gross = rows.reduce((s, i) => s + i.amount, 0);
-  const back = rows.reduce((s, i) => s + (i.reimb ? i.reimb.amount : 0), 0);
+  const gross = rows.reduce((s, i) => s + (occursIn(i, idx) ? i.amount : 0), 0);
+  const back = rows.reduce((s, i) => s + reimbInMonth(i, idx), 0);
 
   return (
     <div className={cx("u-card mb-4 border-t-4", BORDER_T[tone])}>
@@ -231,50 +251,73 @@ function BreakdownGroup({
       </div>
 
       {rows.map((it) => (
-        <BreakdownRow key={it.id} it={it} />
+        <BreakdownRow key={it.id} it={it} idx={idx} />
       ))}
 
       <div className="bg-paper px-3 py-2 sm:flex sm:gap-3">
         <span className="u-label flex-1">Group total</span>
         <div className="mt-1 grid grid-cols-3 gap-2 font-mono text-sm tabular-nums sm:mt-0 sm:flex sm:gap-3">
-          <span className="w-full text-right text-soft sm:w-24">{eur(gross, 2)}</span>
+          <span className="w-full text-right text-soft sm:w-24">
+            {gross > 0 ? eur(gross, 2) : "—"}
+          </span>
           <span className={cx("w-full text-right sm:w-24", back > 0 ? "text-ochre" : "text-rule")}>
             {back > 0 ? `−${eur(back, 2)}` : "—"}
           </span>
-          <span className="w-full text-right text-red sm:w-24">{eur(gross - back, 2)}</span>
+          <span
+            className={cx(
+              "w-full text-right sm:w-24",
+              gross - back > 0.01 ? "text-red" : "text-soft",
+            )}
+          >
+            {eur(gross - back, 2)}
+          </span>
         </div>
       </div>
     </div>
   );
 }
 
-function BreakdownRow({ it }: { it: Item }) {
-  const back = it.reimb ? it.reimb.amount : 0;
-  const yours = it.amount - back;
+/* A repayment runs on its own clock, so a line can be here with money coming
+   back and nothing going out — a one-off paid months ago, still being repaid. */
+function BreakdownRow({ it, idx }: { it: Item; idx: number }) {
+  const due = occursIn(it, idx);
+  const back = reimbInMonth(it, idx);
+  const gross = due ? it.amount : 0;
+  const yours = gross - back;
   const full = back > 0 && yours <= 0.01;
+  const sched = reimbSchedule(it);
+  const lump = !!sched && sched.extras.some((e) => fromYM(e.month) === idx);
 
   return (
     <div className="border-b border-rule px-3 py-2 sm:flex sm:items-center sm:gap-3">
       <div className="min-w-0 flex-1">
-        <div className="text-sm">{it.name}</div>
+        <div className="text-sm">
+          {it.name}
+          {!due && <span className="font-mono text-xs text-ochre"> · repayment only</span>}
+        </div>
         <div className="font-mono text-xs text-soft">
           {it.cat}
           {back > 0 && (
             <span className="text-ochre">
               {" "}
-              · {full ? "fully" : "partly"} covered by {it.reimb!.who}
+              · {full ? "fully" : "partly"} covered by {sched!.who}
+              {lump ? " (lump sum this month)" : ""}
             </span>
           )}
         </div>
       </div>
       <div className="mt-1 grid grid-cols-3 gap-2 sm:mt-0 sm:flex sm:gap-3">
-        <Cell label="Leaves" value={eur(it.amount, 2)} tone="soft" />
+        <Cell label="Leaves" value={due ? eur(gross, 2) : "—"} tone={due ? "soft" : "rule"} />
         <Cell
           label="Comes back"
           value={back > 0 ? `−${eur(back, 2)}` : "—"}
           tone={back > 0 ? "ochre" : "rule"}
         />
-        <Cell label="Yours" value={full ? "€0" : eur(yours, 2)} tone={full ? "soft" : "red"} />
+        <Cell
+          label="Yours"
+          value={Math.abs(yours) <= 0.01 ? "€0" : eur(yours, 2)}
+          tone={yours > 0.01 ? "red" : "soft"}
+        />
       </div>
     </div>
   );

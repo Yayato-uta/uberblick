@@ -1,12 +1,22 @@
-import type { Asset, AssetKind, Data, Freq, Goal, Item, Kind } from "../types";
+import type { Asset, AssetKind, Data, Freq, Goal, Item, Kind, Reimb, ReimbExtra } from "../types";
 import { ASSET_KINDS, FREQ, SCHEMA_VERSION, emptyData } from "./constants";
 import { parseNum, parsePos, uid } from "./format";
 import { fromYM, nowIdx, toYM } from "./month";
 
-/* Files written by the original single-file version carry no schemaVersion.
-   Those are treated as version 0 and brought forward by filling in the fields
-   that version never had. Anything that isn't recognisably a plan is refused
-   outright rather than silently replacing good data. */
+/* Every backup this app has ever written has to come back in whole. There are
+   two older shapes to carry forward, and neither may lose a figure:
+
+   the early shape — no schemaVersion, no goals or assets, no overdraft
+     settings, and a repayment that was just {who, amount}, implicitly
+     mirroring the expense's own frequency and dates;
+
+   the later shape — still no schemaVersion, but repayments carry their own
+     freq/first/last and a list of lump sums.
+
+   An early repayment is brought forward by writing out what it always meant —
+   freq, first and last copied from the item — so the figures come out
+   identical to what the owner saw before. Anything that isn't recognisably a
+   plan is refused outright rather than silently replacing good data. */
 
 const KINDS: Kind[] = ["expense", "income", "saving"];
 const ASSET_KIND_KEYS = Object.keys(ASSET_KINDS) as AssetKind[];
@@ -41,10 +51,52 @@ function normItem(raw: unknown): Item | null {
   };
 
   if (kind === "expense" && isObj(raw.reimb)) {
-    const amount = parsePos(raw.reimb.amount);
-    if (amount > 0) item.reimb = { who: str(raw.reimb.who).trim() || "Someone", amount };
+    const reimb = normReimb(raw.reimb, item);
+    if (reimb) item.reimb = reimb;
   }
   return item;
+}
+
+/** A lump sum survives only if it names a month and carries money. */
+function normExtras(raw: unknown): ReimbExtra[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ReimbExtra[] = [];
+  for (const e of raw) {
+    if (!isObj(e)) continue;
+    const month = normYM(e.month);
+    const amount = parsePos(e.amount);
+    if (month && amount > 0) out.push({ month, amount });
+  }
+  return out;
+}
+
+/**
+ * A repayment with no `freq` came from the early shape, where it followed the
+ * expense exactly. Spelling that out — freq, first and last taken from the item —
+ * reproduces the old behaviour precisely. A repayment that already has its own
+ * schedule keeps every field of it.
+ *
+ * The instalment may be zero when lump sums carry the whole thing, so it is the
+ * pair of them, not the amount alone, that decides whether there is anything
+ * here at all.
+ */
+function normReimb(raw: Record<string, unknown>, item: Item): Reimb | null {
+  const legacy = raw.freq === undefined;
+  const amount = parsePos(raw.amount);
+  const extras = normExtras(raw.extras);
+  if (amount <= 0 && extras.length === 0) return null;
+
+  const freq = (raw.freq as string) in FREQ ? (raw.freq as Freq) : item.freq;
+  return {
+    who: str(raw.who).trim() || "Someone",
+    amount,
+    freq: legacy ? item.freq : freq,
+    // "" is meaningful — it means "fall back to the item" — so an early record
+    // gets the item's dates written in, and a later one keeps what it stored.
+    first: legacy ? item.first : normYM(raw.first),
+    last: legacy ? item.last : normYM(raw.last),
+    extras,
+  };
 }
 
 function normGoal(raw: unknown): Goal | null {
