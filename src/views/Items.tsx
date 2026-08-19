@@ -1,5 +1,5 @@
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import type { Item, Kind } from "../types";
+import type { Asset, Item, Kind } from "../types";
 import { FREQ, KIND } from "../lib/constants";
 import { eur } from "../lib/format";
 import { fromYM, longLabel, monthlyEquivalent } from "../lib/month";
@@ -9,12 +9,14 @@ const ORDER: Kind[] = ["income", "expense", "saving"];
 
 export function Items({
   items,
+  assets,
   start,
   onAdd,
   onEdit,
   onDelete,
 }: {
   items: Item[];
+  assets: Asset[];
   start: number;
   onAdd: () => void;
   onEdit: (it: Item) => void;
@@ -54,6 +56,7 @@ export function Items({
                 <Row
                   key={it.id}
                   it={it}
+                  fund={assets.find((a) => a.id === it.fund)}
                   start={start}
                   tone={tone}
                   onEdit={() => onEdit(it)}
@@ -70,12 +73,15 @@ export function Items({
 
 function Row({
   it,
+  fund,
   start,
   tone,
   onEdit,
   onDelete,
 }: {
   it: Item;
+  /** the fund it comes out of, when it isn't the account */
+  fund: Asset | undefined;
   start: number;
   tone: "red" | "green" | "blue";
   onEdit: () => void;
@@ -103,11 +109,18 @@ function Row({
             </>
           )}
         </div>
-        {it.reimb && (
-          <div className="mt-1 inline-block border border-ochre px-1.5 py-0.5 font-mono text-xs text-ochre">
-            {it.reimb.who} sends back {eur(it.reimb.amount)}
-          </div>
-        )}
+        <div className="flex flex-wrap gap-1">
+          {it.reimb && (
+            <div className="mt-1 inline-block border border-ochre px-1.5 py-0.5 font-mono text-xs text-ochre">
+              {it.reimb.who} sends back {eur(it.reimb.amount)}
+            </div>
+          )}
+          {fund && (
+            <div className="mt-1 inline-block border border-green px-1.5 py-0.5 font-mono text-xs text-green">
+              paid from {fund.name}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="text-right">

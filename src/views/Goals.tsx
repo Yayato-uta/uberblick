@@ -1,5 +1,5 @@
 ﻿import { useState } from "react";
-import { Plus, X } from "lucide-react";
+import { Check, Plus, Wallet, X } from "lucide-react";
 import type { Goal } from "../types";
 import type { Derived, GoalRow } from "../lib/derive";
 import { eur, parsePos } from "../lib/format";
@@ -24,11 +24,13 @@ export function Goals({
   onAdd,
   onRemove,
   onFund,
+  onSpend,
 }: {
   d: Derived;
   onAdd: (g: Omit<Goal, "id">) => void;
   onRemove: (id: string) => void;
   onFund: (g: GoalRow) => void;
+  onSpend: (id: string, spend: string) => void;
 }) {
   return (
     <div className="mt-6">
@@ -56,6 +58,7 @@ export function Goals({
             leftover={d.leftover}
             onRemove={() => onRemove(g.id)}
             onFund={() => onFund(g)}
+            onSpend={(m) => onSpend(g.id, m)}
           />
         ))}
       </div>
@@ -103,14 +106,25 @@ function GoalCard({
   leftover,
   onRemove,
   onFund,
+  onSpend,
 }: {
   g: GoalRow;
   leftover: number;
   onRemove: () => void;
   onFund: () => void;
+  onSpend: (spend: string) => void;
 }) {
   const tight = !g.later && g.perMonth > leftover;
-  const tone: Tone = g.inPlan ? "blue" : g.later ? "soft" : tight ? "red" : "ochre";
+  const spending = g.spendIdx !== null;
+  const tone: Tone = spending
+    ? "green"
+    : g.inPlan
+      ? "blue"
+      : g.later
+        ? "soft"
+        : tight
+          ? "red"
+          : "ochre";
 
   return (
     <div className={cx("u-card border-t-4 p-4", BORDER_T[tone])}>
@@ -178,11 +192,43 @@ function GoalCard({
         )}
       </div>
 
-      {!g.inPlan && (
-        <div className="mt-3">
+      <div className="mt-3 flex flex-wrap gap-2">
+        {!g.inPlan && (
           <Btn onClick={onFund}>
             <Plus size={13} /> Put it in the plan
           </Btn>
+        )}
+        {!spending && (
+          <Btn onClick={() => onSpend(toYM(g.byIdx ?? g.fromIdx))}>
+            <Wallet size={13} /> Spend it when it's due
+          </Btn>
+        )}
+      </div>
+
+      {spending && (
+        <div className="mt-3 border-t border-dashed border-rule pt-3">
+          <div className="flex items-center justify-between gap-2">
+            <Label>Paid for out of the pot</Label>
+            <IconBtn tone="red" onClick={() => onSpend("")} aria-label="Not spending it after all">
+              <X size={14} />
+            </IconBtn>
+          </div>
+          <div className="mt-1">
+            <MonthField
+              value={toYM(g.spendIdx!)}
+              onChange={onSpend}
+              label="Month the pot is spent"
+            />
+          </div>
+          <p className="mt-2 flex gap-1.5 text-xs text-soft">
+            <Check size={13} className="mt-0.5 shrink-0 text-green" aria-hidden />
+            <span>
+              <span className="font-mono">{eur(g.target)}</span>{" "}
+              {g.spentAlready ? "went" : "goes"} on the thing itself in{" "}
+              {longLabel(g.spendIdx!)}. It shows in that month but leaves your balance alone — the
+              money went out of your account month by month on the way in.
+            </span>
+          </p>
         </div>
       )}
     </div>

@@ -240,3 +240,66 @@ describe("migrating a repayment that runs on its own clock", () => {
     expect(twice).toEqual(once);
   });
 });
+
+describe("the goal spend month", () => {
+  it("is absent in older backups, and stays absent", () => {
+    const d = migrate({
+      items: [],
+      goals: [{ id: "g", name: "Wedding", target: 6000, from: "2026-08", by: "2027-08", saved: 0 }],
+    })!;
+    expect(d.goals[0].spend).toBeUndefined();
+  });
+
+  it("survives a round trip once set", () => {
+    const d = migrate({
+      items: [],
+      goals: [
+        { id: "g", name: "Wedding", target: 6000, from: "2026-08", by: "2027-08", saved: 0, spend: "2027-8" },
+      ],
+    })!;
+    expect(d.goals[0].spend).toBe("2027-08");
+    expect(migrate(JSON.parse(JSON.stringify(d)))!.goals[0].spend).toBe("2027-08");
+  });
+
+  it("drops a spend month that isn't a month", () => {
+    const d = migrate({
+      items: [],
+      goals: [{ id: "g", name: "X", target: 1, from: "2026-08", by: "2027-08", saved: 0, spend: "soon" }],
+    })!;
+    expect(d.goals[0].spend).toBeUndefined();
+  });
+});
+
+describe("the fund an expense is paid from", () => {
+  const withFund = {
+    items: [
+      { id: "roof", name: "Roof", kind: "expense", amount: 1500, freq: "yearly", first: "2026-08", fund: "pot" },
+    ],
+    assets: [{ id: "pot", name: "House pot", kind: "savings", value: 12000, rate: 0 }],
+  };
+
+  it("is absent in older backups, and absent means the account", () => {
+    const d = migrate({ items: [{ id: "a", name: "Rent", kind: "expense", amount: 900, freq: "monthly", first: "2026-08" }] })!;
+    expect(d.items[0].fund).toBeUndefined();
+  });
+
+  it("survives a round trip", () => {
+    const d = migrate(withFund)!;
+    expect(d.items[0].fund).toBe("pot");
+    expect(migrate(JSON.parse(JSON.stringify(d)))!.items[0].fund).toBe("pot");
+  });
+
+  it("un-sets a fund pointing at an asset that no longer exists", () => {
+    const d = migrate({ ...withFund, assets: [] })!;
+    expect(d.items[0].fund).toBeUndefined();
+  });
+
+  it("is only ever set on an expense", () => {
+    const d = migrate({
+      items: [{ id: "s", name: "Sparen", kind: "saving", amount: 100, freq: "monthly", first: "2026-08", fund: "pot" }],
+      assets: withFund.assets,
+    })!;
+    expect(d.items[0].fund).toBeUndefined();
+  });
+});
+

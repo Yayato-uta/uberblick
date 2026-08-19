@@ -54,6 +54,11 @@ function normItem(raw: unknown): Item | null {
     const reimb = normReimb(raw.reimb, item);
     if (reimb) item.reimb = reimb;
   }
+  if (kind === "expense") {
+    // absent in every older backup, and absent means "paid from the account"
+    const fund = str(raw.fund);
+    if (fund) item.fund = fund;
+  }
   return item;
 }
 
@@ -111,6 +116,9 @@ function normGoal(raw: unknown): Goal | null {
   };
   const itemId = str(raw.itemId);
   if (itemId) g.itemId = itemId;
+  // absent in every older backup, and absent means "not spent yet"
+  const spend = normYM(raw.spend);
+  if (spend) g.spend = spend;
   return g;
 }
 
@@ -164,10 +172,12 @@ export function migrate(raw: unknown): Data | null {
     schemaVersion: SCHEMA_VERSION,
   };
 
-  // drop links that point at items which no longer exist
+  // drop links that point at something which no longer exists
   const itemIds = new Set(items.map((i) => i.id));
+  const assetIds = new Set(assets.map((a) => a.id));
   data.goals = data.goals.map((g) => (g.itemId && !itemIds.has(g.itemId) ? omitItemId(g) : g));
   data.assets = data.assets.map((a) => (a.feed && !itemIds.has(a.feed) ? omitFeed(a) : a));
+  data.items = data.items.map((i) => (i.fund && !assetIds.has(i.fund) ? omitFund(i) : i));
 
   return data;
 }
@@ -179,5 +189,10 @@ function omitItemId(g: Goal): Goal {
 
 function omitFeed(a: Asset): Asset {
   const { feed: _drop, ...rest } = a;
+  return rest;
+}
+
+function omitFund(i: Item): Item {
+  const { fund: _drop, ...rest } = i;
   return rest;
 }

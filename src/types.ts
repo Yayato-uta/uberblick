@@ -50,6 +50,12 @@ export interface Item {
   last: YM;
   /** expenses only — somebody sends this much back each time */
   reimb?: Reimb;
+  /**
+   * Expenses only — the `Asset.id` of the fund this is paid out of, instead of
+   * the current account. The fund empties on this item's own schedule, so a
+   * one-off empties it at once and a monthly line drains it gradually.
+   */
+  fund?: string;
 }
 
 export interface Goal {
@@ -65,6 +71,13 @@ export interface Goal {
   saved: number;
   /** set once the goal has been turned into a real saving Item */
   itemId?: string;
+  /**
+   * "YYYY-MM" — the month the pot actually gets spent on the thing. Absent
+   * while the goal is only being saved into. The money left the account month by
+   * month on the way in, so spending it again would be counting it twice: a
+   * spend shows in the breakdown but never touches the balance.
+   */
+  spend?: YM;
 }
 
 export interface Asset {

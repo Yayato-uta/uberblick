@@ -1,6 +1,6 @@
 import type { Asset, Data, Goal, Item, ReimbExtra } from "../types";
 import { FREQ } from "./constants";
-import { avgOf, forecast, sumOf, type MonthRow } from "./forecast";
+import { avgOf, forecast, sumOf, type MonthRow, type Spend } from "./forecast";
 import { countOccurrences, fromYM, nowIdx, occursIn, shortLabel } from "./month";
 import { reimbBetween, reimbEnd, reimbInMonth, reimbSchedule, type ReimbSchedule } from "./reimb";
 
@@ -47,6 +47,10 @@ export interface GoalRow extends Goal {
   inPlan: boolean;
   /** the amount of the linked saving item, when there is one */
   planned: number;
+  /** the month the pot gets spent, null while it's only being saved into */
+  spendIdx: number | null;
+  /** the spend is behind us */
+  spentAlready: boolean;
 }
 
 export interface EndingRow extends Item {
@@ -90,6 +94,8 @@ export interface AssetSeries {
   ending: number[];
   /** how much was paid in over the horizon, in `assets` order */
   contributed: number[];
+  /** how much was taken back out to pay for a goal, in `assets` order */
+  withdrawn: number[];
 }
 
 export interface Derived {
@@ -127,12 +133,16 @@ export interface Derived {
   goalRows: GoalRow[];
   goalsToFund: number;
   goalsLater: number;
+  /** every pot being spent inside the horizon, soonest first */
+  spends: Spend[];
 
   assets: Asset[];
   assetSeries: AssetSeries;
   assetsNow: number;
   assetsEnd: number;
   putIn: number;
+  /** taken back out of a pot to pay for the goal it was saved for */
+  takenOut: number;
   growth: number;
   committed: number;
   netWorthNow: number;
@@ -149,14 +159,33 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
   const assets = data.assets ?? [];
   const horizon = data.horizon || 12;
 
+  /* A goal's pot pays for the thing it was saved for. The money left the
+     account monthly on the way in, so the spend shows in its month but never
+     against the balance — otherwise it would be counted twice. */
+  const goalSpends: Spend[] = goals
+    .flatMap((g) => {
+      const idx = fromYM(g.spend ?? "");
+      if (idx === null) return [];
+      const amount = Number(g.target) || 0;
+      if (amount <= 0) return [];
+      // the pot to empty is whichever asset is fed by the goal's saving line
+      const pot = g.itemId ? assets.find((a) => a.feed === g.itemId) : undefined;
+      return [
+        { idx, id: g.id, name: g.name, amount, from: "goal" as const, assetId: pot?.id },
+      ];
+    })
+    .sort((a, b) => a.idx - b.idx);
+
   const months = forecast({
     items,
     opening: Number(data.opening) || 0,
     odRate: Number(data.odRate) || 0,
     horizon,
     start,
+    spends: goalSpends,
   });
   const last = months[months.length - 1];
+  const spends = months.flatMap((m) => m.spends);
 
   const mIncome = avgOf(months, "income");
   const mExpense = avgOf(months, "expense");
@@ -246,6 +275,7 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
       const monthsLeft = byIdx === null ? null : Math.max(1, byIdx - fromIdx + 1);
       const need = Math.max(0, (Number(g.target) || 0) - (Number(g.saved) || 0));
       const linked = g.itemId ? items.find((i) => i.id === g.itemId) : undefined;
+      const spendIdx = fromYM(g.spend ?? "");
       return {
         ...g,
         byIdx,
@@ -256,26 +286,34 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
         perMonth: monthsLeft ? need / monthsLeft : need,
         inPlan: !!linked,
         planned: linked ? linked.amount : 0,
+        spendIdx,
+        spentAlready: spendIdx !== null && spendIdx < start,
       };
     })
     .sort((a, b) => a.fromIdx - b.fromIdx);
 
   const goalsToFund = goalRows
-    .filter((g) => !g.inPlan && !g.later)
+    .filter((g) => !g.inPlan && !g.later && !g.spentAlready)
     .reduce((s, g) => s + g.perMonth, 0);
-  const goalsLater = goalRows.filter((g) => !g.inPlan && g.later).reduce((s, g) => s + g.perMonth, 0);
+  const goalsLater = goalRows
+    .filter((g) => !g.inPlan && g.later && !g.spentAlready)
+    .reduce((s, g) => s + g.perMonth, 0);
 
   /* ── what you own, projected forward ── */
-  const assetSeries = projectAssets(assets, items, horizon, start);
+  const assetSeries = projectAssets(assets, items, horizon, start, spends);
 
   const assetsNow = assets.reduce((s, a) => s + (Number(a.value) || 0), 0);
   const assetsEnd = assetSeries.ending.reduce((s, v) => s + v, 0);
   const putIn = assetSeries.contributed.reduce((s, v) => s + v, 0);
-  const growth = assetsEnd - assetsNow - putIn;
+  const takenOut = assetSeries.withdrawn.reduce((s, v) => s + v, 0);
+  // a pot emptied to pay for a goal is a withdrawal, not a loss — keep it out
+  // of growth, or a spent goal reads as the assets having shrunk on their own
+  const growth = assetsEnd - assetsNow - putIn + takenOut;
 
   /* what you're still committed to pay, net of what people send back */
   const committed = items.reduce((s, it) => {
-    if (it.kind !== "expense" || !it.last) return s;
+    // a funded line is already covered by the fund it draws on
+    if (it.kind !== "expense" || !it.last || it.fund) return s;
     const lastIdx = fromYM(it.last);
     if (lastIdx === null || lastIdx < start) return s;
     let t = 0;
@@ -292,7 +330,8 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
   /* ── things that end ── */
   const ending: EndingRow[] = items
     .flatMap((it) => {
-      if (!it.last || it.kind === "income") return [];
+      // a funded line ending frees up the fund, not your account
+      if (!it.last || it.kind === "income" || it.fund) return [];
       const lastIdx = fromYM(it.last);
       if (lastIdx === null || lastIdx < start) return [];
       const perMonth =
@@ -385,11 +424,13 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
     goalRows,
     goalsToFund,
     goalsLater,
+    spends,
     assets,
     assetSeries,
     assetsNow,
     assetsEnd,
     putIn,
+    takenOut,
     growth,
     committed,
     netWorthNow,
@@ -402,16 +443,19 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
 
 /**
  * Each asset grows (or shrinks) by rate/12 a month, then takes in whatever the
- * saving line linked to it pays in that month.
+ * saving line linked to it pays in that month — and gives back whatever a goal
+ * fed by that same line spends in it. A pot you empty stops being yours.
  */
 export function projectAssets(
   assets: Asset[],
   items: Item[],
   horizon: number,
   start: number,
+  spends: Spend[] = [],
 ): AssetSeries {
   const vals = assets.map((a) => Number(a.value) || 0);
   const contributed = assets.map(() => 0);
+  const withdrawn = assets.map(() => 0);
   const rows: AssetPoint[] = [];
 
   for (let k = 0; k < horizon; k++) {
@@ -425,6 +469,13 @@ export function projectAssets(
         vals[i] += feed.amount;
         contributed[i] += feed.amount;
       }
+      // anything paid out of this fund this month draws it back down
+      for (const sp of spends) {
+        if (sp.idx === idx && sp.assetId === a.id) {
+          vals[i] -= sp.amount;
+          withdrawn[i] += sp.amount;
+        }
+      }
       row[a.id] = Math.round(vals[i]);
       total += vals[i];
     });
@@ -432,5 +483,5 @@ export function projectAssets(
     rows.push(row);
   }
 
-  return { rows, ending: vals, contributed };
+  return { rows, ending: vals, contributed, withdrawn };
 }

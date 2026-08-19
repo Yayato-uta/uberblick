@@ -118,6 +118,16 @@ export default function App() {
     }));
   };
 
+  /** Mark a goal's pot as being spent on the thing — or unmark it. */
+  const setGoalSpend = (id: string, spend: string) =>
+    update((p) => ({
+      ...p,
+      sample: false,
+      goals: p.goals.map((g) =>
+        g.id !== id ? g : spend ? { ...g, spend } : stripKey(g, "spend"),
+      ),
+    }));
+
   /* ── assets ── */
 
   const addAsset = (a: Omit<Asset, "id">) =>
@@ -130,7 +140,12 @@ export default function App() {
     }));
 
   const dropAsset = (id: string) =>
-    update((p) => ({ ...p, assets: p.assets.filter((a) => a.id !== id) }));
+    update((p) => ({
+      ...p,
+      assets: p.assets.filter((a) => a.id !== id),
+      // anything that was paid out of it goes back to coming out of the account
+      items: p.items.map((i) => (i.fund === id ? stripKey(i, "fund") : i)),
+    }));
 
   /* ── data safety ── */
 
@@ -271,6 +286,7 @@ export default function App() {
         {tab === "items" && (
           <Items
             items={data.items}
+            assets={data.assets}
             start={start}
             onAdd={() => setDraft(blankDraft())}
             onEdit={(it) => setDraft(draftFromItem(it))}
@@ -288,7 +304,13 @@ export default function App() {
           />
         )}
         {tab === "goals" && (
-          <Goals d={d} onAdd={addGoal} onRemove={dropGoal} onFund={fundGoal} />
+          <Goals
+            d={d}
+            onAdd={addGoal}
+            onRemove={dropGoal}
+            onFund={fundGoal}
+            onSpend={setGoalSpend}
+          />
         )}
         {tab === "ending" && <Ending d={d} />}
 
@@ -327,7 +349,12 @@ export default function App() {
 
       <BottomNav tab={tab} onPick={setTab} counts={counts} />
 
-      <ItemSheet draft={draft} onSave={upsertItem} onClose={() => setDraft(null)} />
+      <ItemSheet
+        draft={draft}
+        assets={data.assets}
+        onSave={upsertItem}
+        onClose={() => setDraft(null)}
+      />
 
       <Sheet
         open={!!confirm}
