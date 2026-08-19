@@ -111,6 +111,9 @@ function normGoal(raw: unknown): Goal | null {
   };
   const itemId = str(raw.itemId);
   if (itemId) g.itemId = itemId;
+  // absent in every older backup, and absent means "not spent yet"
+  const spend = normYM(raw.spend);
+  if (spend) g.spend = spend;
   return g;
 }
 

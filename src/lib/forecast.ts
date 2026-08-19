@@ -2,6 +2,17 @@ import type { Item } from "../types";
 import { occursIn, shortLabel } from "./month";
 import { reimbInMonth } from "./reimb";
 
+/** A goal's pot being spent on the thing it was saved for. */
+export interface Spend {
+  /** absolute month */
+  idx: number;
+  goalId: string;
+  name: string;
+  amount: number;
+  /** the saving line that filled the pot, when the goal has one */
+  itemId?: string;
+}
+
 export interface MonthRow {
   /** absolute month index */
   idx: number;
@@ -21,6 +32,13 @@ export interface MonthRow {
   balance: number;
   /** every item that touches this month — money out, money back, or both */
   hits: Item[];
+  /**
+   * Paid this month out of money already set aside. Deliberately absent from
+   * `net` and `balance`: it left the account monthly on the way into the pot,
+   * so charging it again would count it twice.
+   */
+  fromSavings: number;
+  spends: Spend[];
 }
 
 export interface ForecastInput {
@@ -29,6 +47,8 @@ export interface ForecastInput {
   odRate: number;
   horizon: number;
   start: number;
+  /** goal pots being spent; they show in the month but not against the balance */
+  spends?: Spend[];
 }
 
 /**
@@ -42,7 +62,14 @@ export interface ForecastInput {
  * with no payment going out — a one-off paid in March, repaid monthly for the
  * rest of the year. Those months count, and the item belongs in `hits`.
  */
-export function forecast({ items, opening, odRate, horizon, start }: ForecastInput): MonthRow[] {
+export function forecast({
+  items,
+  opening,
+  odRate,
+  horizon,
+  start,
+  spends = [],
+}: ForecastInput): MonthRow[] {
   const rows: MonthRow[] = [];
   const rate = (Number(odRate) || 0) / 100 / 12;
   let bal = Number(opening) || 0;
@@ -83,6 +110,8 @@ export function forecast({ items, opening, odRate, horizon, start }: ForecastInp
     bal -= interest;
     net -= interest;
 
+    const spent = spends.filter((sp) => sp.idx === idx);
+
     rows.push({
       idx,
       k,
@@ -96,6 +125,8 @@ export function forecast({ items, opening, odRate, horizon, start }: ForecastInp
       net,
       balance: Math.round(bal),
       hits,
+      fromSavings: spent.reduce((t, sp) => t + sp.amount, 0),
+      spends: spent,
     });
   }
 

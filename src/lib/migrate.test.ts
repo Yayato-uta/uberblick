@@ -240,3 +240,33 @@ describe("migrating a repayment that runs on its own clock", () => {
     expect(twice).toEqual(once);
   });
 });
+
+describe("the goal spend month", () => {
+  it("is absent in older backups, and stays absent", () => {
+    const d = migrate({
+      items: [],
+      goals: [{ id: "g", name: "Wedding", target: 6000, from: "2026-08", by: "2027-08", saved: 0 }],
+    })!;
+    expect(d.goals[0].spend).toBeUndefined();
+  });
+
+  it("survives a round trip once set", () => {
+    const d = migrate({
+      items: [],
+      goals: [
+        { id: "g", name: "Wedding", target: 6000, from: "2026-08", by: "2027-08", saved: 0, spend: "2027-8" },
+      ],
+    })!;
+    expect(d.goals[0].spend).toBe("2027-08");
+    expect(migrate(JSON.parse(JSON.stringify(d)))!.goals[0].spend).toBe("2027-08");
+  });
+
+  it("drops a spend month that isn't a month", () => {
+    const d = migrate({
+      items: [],
+      goals: [{ id: "g", name: "X", target: 1, from: "2026-08", by: "2027-08", saved: 0, spend: "soon" }],
+    })!;
+    expect(d.goals[0].spend).toBeUndefined();
+  });
+});
+

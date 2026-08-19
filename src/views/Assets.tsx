@@ -66,7 +66,11 @@ export function Assets({
               label={`In ${endLabel}`}
               value={eur(d.assetsEnd)}
               tone="green"
-              note={`${eur(d.putIn)} from you, ${eur(d.growth)} from growth.`}
+              note={
+                d.takenOut > 0.5
+                  ? `${eur(d.putIn)} from you, ${eur(d.growth)} from growth, ${eur(d.takenOut)} spent on a goal.`
+                  : `${eur(d.putIn)} from you, ${eur(d.growth)} from growth.`
+              }
             />
             <Stat
               label="Still committed to pay"

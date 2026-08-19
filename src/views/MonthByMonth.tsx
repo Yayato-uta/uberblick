@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { CalendarClock, ChevronLeft, ChevronRight, Repeat, Zap } from "lucide-react";
+import { CalendarClock, ChevronLeft, ChevronRight, PiggyBank, Repeat, Zap } from "lucide-react";
 import type { Item } from "../types";
 import type { Derived } from "../lib/derive";
 import { FREQ } from "../lib/constants";
@@ -189,6 +189,31 @@ export function MonthByMonth({
               total={M.saving}
             />
           )}
+        </div>
+      )}
+
+      {M.spends.length > 0 && (
+        <div className={cx("u-card mt-6 border-t-4", BORDER_T.green)}>
+          <div className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2">
+            <PiggyBank size={14} className={TEXT.green} aria-hidden />
+            <span className={cx("font-mono text-xs uppercase tracking-widest", TEXT.green)}>
+              Paid from what you set aside · {M.spends.length}
+            </span>
+            <span className="text-xs text-soft">the pot pays, not the account</span>
+          </div>
+          {M.spends.map((sp) => (
+            <div
+              key={sp.goalId}
+              className="flex justify-between gap-3 border-b border-rule px-3 py-2 text-sm"
+            >
+              <span>{sp.name}</span>
+              <span className={cx("font-mono tabular-nums", TEXT.green)}>{eur(sp.amount, 2)}</span>
+            </div>
+          ))}
+          <div className="bg-paper px-3 py-2 text-xs text-soft">
+            Already out of your account, month by month, on the way into the pot — so it doesn't
+            touch the {eur(M.balance)} above.
+          </div>
         </div>
       )}
 

@@ -65,6 +65,13 @@ export interface Goal {
   saved: number;
   /** set once the goal has been turned into a real saving Item */
   itemId?: string;
+  /**
+   * "YYYY-MM" — the month the pot actually gets spent on the thing. Absent
+   * while the goal is only being saved into. The money left the account month by
+   * month on the way in, so spending it again would be counting it twice: a
+   * spend shows in the breakdown but never touches the balance.
+   */
+  spend?: YM;
 }
 
 export interface Asset {

@@ -118,6 +118,16 @@ export default function App() {
     }));
   };
 
+  /** Mark a goal's pot as being spent on the thing — or unmark it. */
+  const setGoalSpend = (id: string, spend: string) =>
+    update((p) => ({
+      ...p,
+      sample: false,
+      goals: p.goals.map((g) =>
+        g.id !== id ? g : spend ? { ...g, spend } : stripKey(g, "spend"),
+      ),
+    }));
+
   /* ── assets ── */
 
   const addAsset = (a: Omit<Asset, "id">) =>
@@ -288,7 +298,13 @@ export default function App() {
           />
         )}
         {tab === "goals" && (
-          <Goals d={d} onAdd={addGoal} onRemove={dropGoal} onFund={fundGoal} />
+          <Goals
+            d={d}
+            onAdd={addGoal}
+            onRemove={dropGoal}
+            onFund={fundGoal}
+            onSpend={setGoalSpend}
+          />
         )}
         {tab === "ending" && <Ending d={d} />}
 

@@ -435,3 +435,137 @@ describe("a one-off repaid over the following year", () => {
   });
 });
 
+describe("spending a goal's pot on the thing it was saved for", () => {
+  /* Save 500 a month for a year, then pay the 6000 out of the pot. The money
+     already left the account on the way in, so the purchase must not hit the
+     balance a second time. */
+  const goal = {
+    id: "wedding",
+    name: "Wedding",
+    target: 6000,
+    from: toYM(START),
+    by: toYM(START + 11),
+    saved: 0,
+    itemId: "pot-feed",
+    spend: toYM(START + 11),
+  };
+  const feed = item({
+    id: "pot-feed",
+    name: "Wedding saving",
+    kind: "saving",
+    amount: 500,
+    first: toYM(START),
+    last: toYM(START + 11),
+  });
+
+  const d = derive(plan({ horizon: 12, items: [feed], goals: [goal] }), START);
+
+  it("shows the spend in its month", () => {
+    expect(d.spends).toHaveLength(1);
+    expect(d.months[11].fromSavings).toBe(6000);
+    expect(d.months[11].spends[0].name).toBe("Wedding");
+  });
+
+  it("leaves every other month alone", () => {
+    expect(d.months.slice(0, 11).every((m) => m.fromSavings === 0)).toBe(true);
+  });
+
+  it("never charges it against the balance", () => {
+    // twelve months of saving and nothing else: the account is down 6000, and
+    // the purchase does not take another 6000 out of it
+    expect(d.months[11].balance).toBe(-6000);
+    expect(d.months[11].net).toBe(-500);
+    expect(d.months[11].expense).toBe(0);
+  });
+
+  it("draws down the pot it was saved into", () => {
+    const withPot = derive(
+      plan({
+        horizon: 12,
+        items: [feed],
+        goals: [goal],
+        assets: [{ id: "pot", name: "Wedding pot", kind: "savings", value: 0, rate: 0, feed: "pot-feed" }],
+      }),
+      START,
+    );
+    // eleven months of 500 in, then the twelfth pays in and empties it
+    expect(withPot.assetSeries.rows[10].pot).toBe(5500);
+    expect(withPot.assetSeries.ending[0]).toBeCloseTo(0, 6);
+  });
+
+  it("counts the withdrawal as spent, not as the pot having shrunk", () => {
+    const withPot = derive(
+      plan({
+        horizon: 12,
+        items: [feed],
+        goals: [goal],
+        assets: [{ id: "pot", name: "Wedding pot", kind: "savings", value: 0, rate: 0, feed: "pot-feed" }],
+      }),
+      START,
+    );
+    expect(withPot.putIn).toBe(6000);
+    expect(withPot.takenOut).toBe(6000);
+    // nothing was gained or lost — it all went in and came back out again
+    expect(withPot.growth).toBeCloseTo(0, 6);
+  });
+
+  it("leaves a pot alone when the goal was never linked to it", () => {
+    const unlinked = derive(
+      plan({
+        horizon: 12,
+        items: [feed],
+        goals: [{ ...goal, itemId: undefined }],
+        assets: [{ id: "pot", name: "Other pot", kind: "savings", value: 0, rate: 0, feed: "pot-feed" }],
+      }),
+      START,
+    );
+    expect(unlinked.assetSeries.ending[0]).toBeCloseTo(6000, 6);
+  });
+});
+
+describe("a goal that has already been spent", () => {
+  const spentGoal = {
+    id: "trip",
+    name: "Trip",
+    target: 2000,
+    from: toYM(START - 12),
+    by: toYM(START - 1),
+    saved: 0,
+    spend: toYM(START - 1),
+  };
+
+  const d = derive(plan({ horizon: 12, goals: [spentGoal] }), START);
+
+  it("knows the spend is behind it", () => {
+    expect(d.goalRows[0].spentAlready).toBe(true);
+  });
+
+  it("stops competing for this month's slack", () => {
+    expect(d.goalsToFund).toBe(0);
+    expect(d.goalsLater).toBe(0);
+  });
+
+  it("keeps the spend out of a horizon it doesn't fall in", () => {
+    expect(d.months.every((m) => m.fromSavings === 0)).toBe(true);
+  });
+});
+
+describe("goals without a spend month", () => {
+  it("behave exactly as before", () => {
+    const d = derive(
+      plan({
+        horizon: 12,
+        goals: [
+          { id: "g", name: "Deposit", target: 1200, from: toYM(START), by: toYM(START + 11), saved: 0 },
+        ],
+      }),
+      START,
+    );
+    expect(d.spends).toEqual([]);
+    expect(d.goalRows[0].spendIdx).toBeNull();
+    expect(d.goalRows[0].spentAlready).toBe(false);
+    expect(d.months.every((m) => m.fromSavings === 0 && m.spends.length === 0)).toBe(true);
+    expect(d.goalsToFund).toBeCloseTo(100, 6);
+  });
+});
+
