@@ -1,6 +1,7 @@
-import type { Item } from "../types";
+import type { Item, Pot } from "../types";
 import { occursIn, shortLabel } from "./month";
 import { reimbInMonth } from "./reimb";
+import { allocatedTotal } from "./pots";
 
 /** Money paid out of a fund rather than out of the current account. */
 export interface Spend {
@@ -42,6 +43,12 @@ export interface MonthRow {
    */
   fromSavings: number;
   spends: Spend[];
+  /**
+   * Set aside into budget pots this month. Counted inside `expense`, because
+   * money budgeted for food is money food costs you — what you don't spend
+   * stays in the pot rather than coming back to the account.
+   */
+  potAllocated: number;
 }
 
 export interface ForecastInput {
@@ -55,6 +62,8 @@ export interface ForecastInput {
    * `items` and need not be passed in here.
    */
   spends?: Spend[];
+  /** budget envelopes; their monthly allocation is part of what a month costs */
+  pots?: Pot[];
 }
 
 /**
@@ -75,6 +84,7 @@ export function forecast({
   horizon,
   start,
   spends = [],
+  pots = [],
 }: ForecastInput): MonthRow[] {
   const rows: MonthRow[] = [];
   const rate = (Number(odRate) || 0) / 100 / 12;
@@ -133,6 +143,10 @@ export function forecast({
       }
     }
 
+    // what you set aside for the month's budgets leaves the account as well
+    const potAllocated = allocatedTotal(pots, idx);
+    expense += potAllocated;
+
     let net = income + reimb - expense - saving;
     bal += net;
     const interest = bal < 0 ? -bal * rate : 0;
@@ -156,6 +170,7 @@ export function forecast({
       hits,
       fromSavings: spent.reduce((t, sp) => t + sp.amount, 0),
       spends: spent,
+      potAllocated,
     });
   }
 

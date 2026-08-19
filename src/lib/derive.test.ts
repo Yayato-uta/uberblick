@@ -646,3 +646,87 @@ describe("an expense whose fund is the account", () => {
   });
 });
 
+describe("a budget pot in the plan", () => {
+  const food = {
+    id: "food",
+    name: "Food",
+    monthly: 300,
+    from: toYM(START),
+    last: "",
+    opening: 0,
+  };
+
+  it("takes its allocation out of the account every month", () => {
+    const d = derive(plan({ horizon: 12, opening: 0, pots: [food] }), START);
+    expect(d.months[0].potAllocated).toBe(300);
+    expect(d.months[0].expense).toBe(300);
+    expect(d.months[0].net).toBe(-300);
+    // and it keeps coming out, spent or not
+    expect(d.months[11].balance).toBe(-3600);
+    expect(d.netCost).toBe(300);
+  });
+
+  it("does not charge the account again when you actually buy something", () => {
+    const spent = plan({
+      horizon: 12,
+      opening: 0,
+      pots: [food],
+      purchases: [
+        { id: "a", potId: "food", date: `${toYM(START)}-04`, note: "Billa", amount: 120 },
+      ],
+    });
+    const d = derive(spent, START);
+    // the purchase shows against the pot, never against the balance
+    expect(d.months[0].expense).toBe(300);
+    expect(d.months[0].balance).toBe(-300);
+    expect(d.potRows[0].spent).toBe(120);
+    expect(d.potRows[0].left).toBe(180);
+  });
+
+  it("reports the pot as it stands in whichever month is being looked at", () => {
+    const data = plan({
+      horizon: 12,
+      pots: [food],
+      purchases: [
+        { id: "a", potId: "food", date: `${toYM(START)}-04`, amount: 120, note: "" },
+        { id: "b", potId: "food", date: `${toYM(START + 1)}-09`, amount: 50, note: "" },
+      ],
+    });
+
+    const now = derive(data, START);
+    expect(now.potMonthIdx).toBe(START);
+    expect(now.potRows[0].carriedIn).toBe(0);
+    expect(now.potRows[0].left).toBe(180);
+
+    const next = derive(data, START, START + 1);
+    expect(next.potMonthIdx).toBe(START + 1);
+    // last month's 180 rolls in on top of the new 300
+    expect(next.potRows[0].carriedIn).toBe(180);
+    expect(next.potRows[0].available).toBe(480);
+    expect(next.potRows[0].spent).toBe(50);
+    expect(next.potRows[0].left).toBe(430);
+    expect(next.potRows[0].purchases).toHaveLength(1);
+  });
+
+  it("totals every pot for the month on show", () => {
+    const d = derive(
+      plan({
+        horizon: 12,
+        pots: [food, { ...food, id: "petrol", name: "Petrol", monthly: 120 }],
+        purchases: [{ id: "a", potId: "petrol", date: `${toYM(START)}-04`, amount: 40, note: "" }],
+      }),
+      START,
+    );
+    expect(d.potAllocated).toBe(420);
+    expect(d.potSpent).toBe(40);
+    expect(d.potLeft).toBe(380);
+  });
+
+  it("changes nothing for a plan with no pots", () => {
+    const d = derive(plan({ horizon: 12, opening: 0 }), START);
+    expect(d.potRows).toEqual([]);
+    expect(d.months.every((m) => m.potAllocated === 0)).toBe(true);
+    expect(d.months[0].expense).toBe(0);
+  });
+});
+

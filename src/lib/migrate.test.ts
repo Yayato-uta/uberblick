@@ -303,3 +303,68 @@ describe("the fund an expense is paid from", () => {
   });
 });
 
+describe("budget pots", () => {
+  it("come in empty for every older backup", () => {
+    const d = migrate({ items: [] })!;
+    expect(d.pots).toEqual([]);
+    expect(d.purchases).toEqual([]);
+  });
+
+  it("keep their figures and tidy up sloppy months and dates", () => {
+    const d = migrate({
+      items: [],
+      pots: [{ id: "food", name: "Food", monthly: "300", from: "2026-8", last: "", opening: "12,50" }],
+      purchases: [{ id: "p1", potId: "food", date: "2026-8-3", note: " Billa ", amount: "47,20" }],
+    })!;
+    expect(d.pots[0]).toEqual({
+      id: "food",
+      name: "Food",
+      monthly: 300,
+      from: "2026-08",
+      last: "",
+      opening: 12.5,
+    });
+    expect(d.purchases[0]).toMatchObject({ date: "2026-08-03", note: "Billa", amount: 47.2 });
+  });
+
+  it("lets a pot be in the red, since overspending puts it there", () => {
+    const d = migrate({
+      items: [],
+      pots: [{ id: "p", name: "Food", monthly: 100, from: "2026-08", opening: -40 }],
+    })!;
+    expect(d.pots[0].opening).toBe(-40);
+  });
+
+  it("keeps a purchase amount positive, as every amount in the app is", () => {
+    const d = migrate({
+      items: [],
+      pots: [{ id: "p", name: "Food", monthly: 100, from: "2026-08" }],
+      purchases: [{ id: "a", potId: "p", date: "2026-08-01", amount: -20 }],
+    })!;
+    // there is no refund concept, so a signed figure is read as its size
+    expect(d.purchases[0].amount).toBe(20);
+  });
+
+  it("drops a purchase with no usable date and one charged to a pot that's gone", () => {
+    const d = migrate({
+      items: [],
+      pots: [{ id: "food", name: "Food", monthly: 300, from: "2026-08" }],
+      purchases: [
+        { id: "ok", potId: "food", date: "2026-08-03", amount: 10 },
+        { id: "nodate", potId: "food", date: "whenever", amount: 10 },
+        { id: "orphan", potId: "gone", date: "2026-08-03", amount: 10 },
+      ],
+    })!;
+    expect(d.purchases.map((p) => p.id)).toEqual(["ok"]);
+  });
+
+  it("round-trips its own export", () => {
+    const once = migrate({
+      items: [],
+      pots: [{ id: "food", name: "Food", monthly: 300, from: "2026-08", last: "", opening: 0 }],
+      purchases: [{ id: "p1", potId: "food", date: "2026-08-03", note: "Billa", amount: 47.2 }],
+    })!;
+    expect(migrate(JSON.parse(JSON.stringify(once)))).toEqual(once);
+  });
+});
+

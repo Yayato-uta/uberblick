@@ -10,8 +10,8 @@ import {
   Sun,
   Upload,
 } from "lucide-react";
-import type { Asset, Goal, Item } from "./types";
-import type { GoalRow } from "./lib/derive";
+import type { Asset, Goal, Item, Pot, Purchase } from "./types";
+import type { GoalRow, PotRow } from "./lib/derive";
 import { derive } from "./lib/derive";
 import { emptyData } from "./lib/constants";
 import { eur, uid } from "./lib/format";
@@ -28,6 +28,7 @@ import { Btn, Callout, cx } from "./components/ui";
 import { Overview } from "./views/Overview";
 import { MonthByMonth } from "./views/MonthByMonth";
 import { Items } from "./views/Items";
+import { Pots } from "./views/Pots";
 import { People } from "./views/People";
 import { Assets } from "./views/Assets";
 import { Goals } from "./views/Goals";
@@ -55,7 +56,10 @@ export default function App() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const start = useMemo(() => nowIdx(), []);
-  const d = useMemo(() => derive(data, start), [data, start]);
+  /* Pots are looked at a month at a time, and the month is browsable — kept
+     here so stepping through it doesn't reset when you switch tabs. */
+  const [potMonth, setPotMonth] = useState(start);
+  const d = useMemo(() => derive(data, start, potMonth), [data, start, potMonth]);
 
   // the horizon can shrink under the selected month
   useEffect(() => {
@@ -147,6 +151,45 @@ export default function App() {
       items: p.items.map((i) => (i.fund === id ? stripKey(i, "fund") : i)),
     }));
 
+  /* ── budget pots ── */
+
+  const addPot = (p: Omit<Pot, "id">) =>
+    update((prev) => ({ ...prev, sample: false, pots: [...prev.pots, { ...p, id: uid() }] }));
+
+  const editPot = (id: string, patch: Partial<Pot>) =>
+    update((prev) => ({
+      ...prev,
+      sample: false,
+      pots: prev.pots.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+    }));
+
+  const dropPot = (pot: PotRow) =>
+    setConfirm({
+      title: "Remove this pot",
+      body: pot.purchases.length
+        ? `"${pot.name}" goes, and so does everything logged against it.`
+        : `"${pot.name}" comes out of the plan.`,
+      action: "Remove it",
+      run: () =>
+        update((prev) => ({
+          ...prev,
+          sample: false,
+          pots: prev.pots.filter((p) => p.id !== pot.id),
+          // nothing may be left charged to a pot that no longer exists
+          purchases: prev.purchases.filter((x) => x.potId !== pot.id),
+        })),
+    });
+
+  const addPurchase = (x: Omit<Purchase, "id">) =>
+    update((prev) => ({
+      ...prev,
+      sample: false,
+      purchases: [...prev.purchases, { ...x, id: uid() }],
+    }));
+
+  const dropPurchase = (x: Purchase) =>
+    update((prev) => ({ ...prev, purchases: prev.purchases.filter((p) => p.id !== x.id) }));
+
   /* ── data safety ── */
 
   const doExport = async () => {
@@ -195,6 +238,7 @@ export default function App() {
     });
 
   const counts = {
+    pots: data.pots.length,
     items: data.items.length,
     people: d.people.length,
     assets: data.assets.length,
@@ -283,6 +327,17 @@ export default function App() {
 
         {tab === "overview" && <Overview data={data} d={d} update={update} />}
         {tab === "month" && <MonthByMonth d={d} k={monthK} setK={setMonthK} />}
+        {tab === "pots" && (
+          <Pots
+            d={d}
+            onStep={(delta) => setPotMonth((m) => m + delta)}
+            onAddPot={addPot}
+            onEditPot={editPot}
+            onDropPot={dropPot}
+            onSpend={addPurchase}
+            onDropPurchase={dropPurchase}
+          />
+        )}
         {tab === "items" && (
           <Items
             items={data.items}

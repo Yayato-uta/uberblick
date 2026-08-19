@@ -92,10 +92,44 @@ export interface Asset {
   feed?: string;
 }
 
+/**
+ * A budget envelope. You put `monthly` aside for a category, spend it down as
+ * you go, and whatever is left rolls into next month — so a lean month leaves
+ * you more to play with in the one after it.
+ *
+ * A pot is a spending plan, not something you own: money in it is earmarked for
+ * a category, which is why it lives apart from `Asset` and its growth rates.
+ */
+export interface Pot {
+  id: string;
+  name: string;
+  /** set aside each month */
+  monthly: number;
+  /** first month it's funded, "YYYY-MM" */
+  from: YM;
+  /** last month it's funded, "" for ongoing */
+  last: YM;
+  /** what was already in it before `from` — the carry-in from life before this app */
+  opening: number;
+}
+
+/** One thing you actually bought, charged against a pot. */
+export interface Purchase {
+  id: string;
+  potId: string;
+  /** "YYYY-MM-DD" — the day granularity exists only here */
+  date: string;
+  /** what it was, free text, may be blank */
+  note: string;
+  amount: number;
+}
+
 export interface Data {
   items: Item[];
   goals: Goal[];
   assets: Asset[];
+  pots: Pot[];
+  purchases: Purchase[];
   /** account balance today — MAY BE NEGATIVE */
   opening: number;
   /** overdraft limit as a positive number, e.g. 6000 */

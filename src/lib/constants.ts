@@ -6,7 +6,7 @@ import {
   TrendingUp,
   type LucideIcon,
 } from "lucide-react";
-import type { AssetKind, Data, Freq, Item, Kind } from "../types";
+import type { AssetKind, Data, Freq, Item, Kind, Pot, Purchase } from "../types";
 import { nowIdx, toYM } from "./month";
 import { uid } from "./format";
 import { LIGHT, type Palette } from "./palette";
@@ -72,6 +72,8 @@ export function emptyData(): Data {
     items: [],
     goals: [],
     assets: [],
+    pots: [],
+    purchases: [],
     opening: 0,
     overdraft: 0,
     odRate: 0,
@@ -112,10 +114,33 @@ export function sampleItems(): Item[] {
   ];
 }
 
+/**
+ * One budget pot with a month behind it, so the carry-over is visible straight
+ * away rather than needing a month of use to appear.
+ */
+export function samplePots(): { pots: Pot[]; purchases: Purchase[] } {
+  const T = nowIdx();
+  const potId = uid();
+  const day = (idx: number, d: number) => `${toYM(idx)}-${String(d).padStart(2, "0")}`;
+  return {
+    pots: [
+      { id: potId, name: "Groceries", monthly: 400, from: toYM(T - 1), last: "", opening: 0 },
+    ],
+    purchases: [
+      { id: uid(), potId, date: day(T - 1, 4), note: "Weekly shop", amount: 96.4 },
+      { id: uid(), potId, date: day(T - 1, 18), note: "Weekly shop", amount: 112.8 },
+      { id: uid(), potId, date: day(T, 3), note: "Weekly shop", amount: 88.15 },
+    ],
+  };
+}
+
 export function sampleData(): Data {
+  const { pots, purchases } = samplePots();
   return {
     ...emptyData(),
     items: sampleItems(),
+    pots,
+    purchases,
     opening: -1000,
     overdraft: 5000,
     sample: true,

@@ -1,11 +1,20 @@
 import { useEffect, useRef } from "react";
-import { CalendarClock, ChevronLeft, ChevronRight, PiggyBank, Repeat, Zap } from "lucide-react";
+import {
+  CalendarClock,
+  ChevronLeft,
+  ChevronRight,
+  PiggyBank,
+  Repeat,
+  ShoppingBasket,
+  Zap,
+} from "lucide-react";
 import type { Item } from "../types";
 import type { Derived } from "../lib/derive";
 import { FREQ } from "../lib/constants";
 import { eur } from "../lib/format";
 import { fromYM, fullLabel, occursIn } from "../lib/month";
 import { reimbInMonth, reimbSchedule } from "../lib/reimb";
+import { allocatedIn } from "../lib/pots";
 import { BORDER_T, Empty, Stat, TEXT, cx, type Tone } from "../components/ui";
 
 export function MonthByMonth({
@@ -191,6 +200,35 @@ export function MonthByMonth({
               total={M.saving}
             />
           )}
+        </div>
+      )}
+
+      {M.potAllocated > 0 && (
+        <div className={cx("u-card mb-4 border-t-4", BORDER_T.ochre)}>
+          <div className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2">
+            <ShoppingBasket size={14} className={TEXT.ochre} aria-hidden />
+            <span className={cx("font-mono text-xs uppercase tracking-widest", TEXT.ochre)}>
+              Into budget pots
+            </span>
+            <span className="text-xs text-soft">set aside for the month's spending</span>
+          </div>
+          {d.potRows
+            .filter((p) => allocatedIn(p, M.idx) > 0)
+            .map((p) => (
+              <div
+                key={p.id}
+                className="flex justify-between gap-3 border-b border-rule px-3 py-2 text-sm"
+              >
+                <span>{p.name}</span>
+                <span className={cx("font-mono tabular-nums", TEXT.ochre)}>
+                  {eur(allocatedIn(p, M.idx), 2)}
+                </span>
+              </div>
+            ))}
+          <div className="bg-paper px-3 py-2 text-xs text-soft">
+            Counted in the {eur(M.expense)} above. What you don't spend stays in the pot for next
+            month rather than coming back to the account.
+          </div>
         </div>
       )}
 

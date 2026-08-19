@@ -1,4 +1,16 @@
-import type { Asset, AssetKind, Data, Freq, Goal, Item, Kind, Reimb, ReimbExtra } from "../types";
+import type {
+  Asset,
+  AssetKind,
+  Data,
+  Freq,
+  Goal,
+  Item,
+  Kind,
+  Pot,
+  Purchase,
+  Reimb,
+  ReimbExtra,
+} from "../types";
 import { ASSET_KINDS, FREQ, SCHEMA_VERSION, emptyData } from "./constants";
 import { parseNum, parsePos, uid } from "./format";
 import { fromYM, nowIdx, toYM } from "./month";
@@ -122,6 +134,45 @@ function normGoal(raw: unknown): Goal | null {
   return g;
 }
 
+function normPot(raw: unknown): Pot | null {
+  if (!isObj(raw)) return null;
+  return {
+    id: str(raw.id) || uid(),
+    name: str(raw.name).trim() || "Unnamed",
+    monthly: parsePos(raw.monthly),
+    from: normYM(raw.from) || toYM(nowIdx()),
+    last: normYM(raw.last),
+    // a pot can legitimately be in the red, so this one keeps its sign
+    opening: parseNum(raw.opening),
+  };
+}
+
+/** "2026-8-3" and "2026-08-03" both come out as "2026-08-03"; junk is refused. */
+function normDate(v: unknown): string {
+  const parts = str(v).split("-");
+  if (parts.length < 3) return "";
+  const [y, m, d] = parts.map(Number);
+  if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return "";
+  if (!y || m < 1 || m > 12 || d < 1 || d > 31) return "";
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  return `${y}-${p2(m)}-${p2(d)}`;
+}
+
+function normPurchase(raw: unknown): Purchase | null {
+  if (!isObj(raw)) return null;
+  const date = normDate(raw.date);
+  const amount = parsePos(raw.amount);
+  // a purchase with no day or no money is not a purchase
+  if (!date || amount <= 0) return null;
+  return {
+    id: str(raw.id) || uid(),
+    potId: str(raw.potId),
+    date,
+    note: str(raw.note).trim(),
+    amount,
+  };
+}
+
 function normAsset(raw: unknown): Asset | null {
   if (!isObj(raw)) return null;
   const kind = ASSET_KIND_KEYS.includes(raw.kind as AssetKind)
@@ -156,6 +207,16 @@ export function migrate(raw: unknown): Data | null {
   const assets = Array.isArray(raw.assets)
     ? raw.assets.map(normAsset).filter((a): a is Asset => a !== null)
     : base.assets;
+  const pots = Array.isArray(raw.pots)
+    ? raw.pots.map(normPot).filter((p): p is Pot => p !== null)
+    : base.pots;
+  const potIds = new Set(pots.map((p) => p.id));
+  // a purchase charged to a pot that is gone has nothing to be charged against
+  const purchases = Array.isArray(raw.purchases)
+    ? raw.purchases
+        .map(normPurchase)
+        .filter((p): p is Purchase => p !== null && potIds.has(p.potId))
+    : base.purchases;
 
   const horizonRaw = Number(raw.horizon);
   const horizon = horizonRaw === 18 ? 18 : horizonRaw === 24 ? 24 : 12;
@@ -164,6 +225,8 @@ export function migrate(raw: unknown): Data | null {
     items,
     goals,
     assets,
+    pots,
+    purchases,
     opening: parseNum(raw.opening),
     overdraft: parsePos(raw.overdraft),
     odRate: parsePos(raw.odRate),

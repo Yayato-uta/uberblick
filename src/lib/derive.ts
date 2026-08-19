@@ -1,8 +1,9 @@
-import type { Asset, Data, Goal, Item, ReimbExtra } from "../types";
+import type { Asset, Data, Goal, Item, Pot, Purchase, ReimbExtra } from "../types";
 import { FREQ } from "./constants";
 import { avgOf, forecast, sumOf, type MonthRow, type Spend } from "./forecast";
 import { countOccurrences, fromYM, nowIdx, occursIn, shortLabel } from "./month";
 import { reimbBetween, reimbEnd, reimbInMonth, reimbSchedule, type ReimbSchedule } from "./reimb";
+import { potMonth, purchasesIn, type PotMonth } from "./pots";
 
 /* Everything the views read is computed here, in one pass, from the persisted
    data alone. Views stay dumb; the arithmetic stays testable. */
@@ -81,6 +82,11 @@ export interface CostRiseRow extends Item {
   n: number;
 }
 
+export interface PotRow extends Pot, PotMonth {
+  /** what was bought out of it this month, newest first */
+  purchases: Purchase[];
+}
+
 export interface AssetPoint {
   idx: number;
   name: string;
@@ -151,12 +157,22 @@ export interface Derived {
   ending: EndingRow[];
   freedTotal: number;
   costRises: CostRiseRow[];
+
+  /** budget envelopes, as they stand in `potMonthIdx` */
+  potRows: PotRow[];
+  /** the month the pot figures describe — the current month unless asked otherwise */
+  potMonthIdx: number;
+  potAllocated: number;
+  potSpent: number;
+  potLeft: number;
 }
 
-export function derive(data: Data, start: number = nowIdx()): Derived {
+export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start): Derived {
   const items = data.items ?? [];
   const goals = data.goals ?? [];
   const assets = data.assets ?? [];
+  const pots = data.pots ?? [];
+  const purchases = data.purchases ?? [];
   const horizon = data.horizon || 12;
 
   /* A goal's pot pays for the thing it was saved for. The money left the
@@ -183,6 +199,7 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
     horizon,
     start,
     spends: goalSpends,
+    pots,
   });
   const last = months[months.length - 1];
   const spends = months.flatMap((m) => m.spends);
@@ -328,6 +345,16 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
   const netWorthEnd = assetsEnd + (last ? last.balance : 0) - committed;
 
   /* ── things that end ── */
+  /* ── budget envelopes ── */
+  const potRows: PotRow[] = pots.map((pot) => ({
+    ...pot,
+    ...potMonth(pot, purchases, potMonthIdx),
+    purchases: purchasesIn(pot, purchases, potMonthIdx),
+  }));
+  const potAllocated = potRows.reduce((s, p) => s + p.allocated, 0);
+  const potSpent = potRows.reduce((s, p) => s + p.spent, 0);
+  const potLeft = potRows.reduce((s, p) => s + p.left, 0);
+
   const ending: EndingRow[] = items
     .flatMap((it) => {
       // a funded line ending frees up the fund, not your account
@@ -438,6 +465,11 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
     ending,
     freedTotal,
     costRises,
+    potRows,
+    potMonthIdx,
+    potAllocated,
+    potSpent,
+    potLeft,
   };
 }
 

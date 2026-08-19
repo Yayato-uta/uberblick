@@ -6,6 +6,7 @@ import {
   List,
   MoreHorizontal,
   PiggyBank,
+  ShoppingBasket,
   Users,
   Wallet,
   type LucideIcon,
@@ -13,7 +14,15 @@ import {
 import { Sheet } from "./Sheet";
 import { cx } from "./ui";
 
-export type TabId = "overview" | "month" | "items" | "people" | "assets" | "goals" | "ending";
+export type TabId =
+  | "overview"
+  | "month"
+  | "pots"
+  | "items"
+  | "people"
+  | "assets"
+  | "goals"
+  | "ending";
 
 export interface TabMeta {
   id: TabId;
@@ -27,6 +36,7 @@ export interface TabMeta {
 export const TABS: TabMeta[] = [
   { id: "overview", label: "Overview", short: "Overview", icon: LayoutGrid },
   { id: "month", label: "Month by month", short: "Months", icon: CalendarDays },
+  { id: "pots", label: "Budget pots", short: "Pots", icon: ShoppingBasket },
   { id: "items", label: "All items", short: "Items", icon: List },
   { id: "assets", label: "What I own", short: "What I own", icon: Wallet, secondary: true },
   { id: "people", label: "Paid back to me", short: "Paid back", icon: Users, secondary: true },
@@ -36,7 +46,7 @@ export const TABS: TabMeta[] = [
 
 export type TabCounts = Partial<Record<TabId, number>>;
 
-/** Seven tabs across the top — desktop only. */
+/** Every tab across the top — desktop only. */
 export function DesktopTabs({
   tab,
   onPick,
@@ -47,14 +57,15 @@ export function DesktopTabs({
   counts: TabCounts;
 }) {
   return (
-    <nav className="mt-6 hidden gap-1 overflow-x-auto border-b border-rule sm:flex">
+    /* wraps rather than scrolls: a tab sliced off at the edge reads as broken */
+    <nav className="mt-6 hidden flex-wrap gap-x-1 border-b border-rule sm:flex">
       {TABS.map((t) => (
         <button
           key={t.id}
           onClick={() => onPick(t.id)}
           aria-current={tab === t.id ? "page" : undefined}
           className={cx(
-            "whitespace-nowrap border-b-2 px-4 py-3 font-mono text-xs uppercase tracking-widest",
+            "whitespace-nowrap border-b-2 px-3 py-3 font-mono text-xs uppercase tracking-widest",
             tab === t.id ? "border-ink text-ink" : "border-transparent text-soft",
           )}
         >
@@ -66,9 +77,10 @@ export function DesktopTabs({
   );
 }
 
-const PRIMARY: TabId[] = ["overview", "month", "items"];
+/* Pots earns a bottom-bar slot because it is the one screen used daily. */
+const PRIMARY: TabId[] = ["overview", "month", "pots", "items"];
 
-/** Fixed bar at the bottom of a phone: three views and a More sheet. */
+/** Fixed bar at the bottom of a phone: the daily views and a More sheet. */
 export function BottomNav({
   tab,
   onPick,
