@@ -162,14 +162,17 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
   /* A goal's pot pays for the thing it was saved for. The money left the
      account monthly on the way in, so the spend shows in its month but never
      against the balance — otherwise it would be counted twice. */
-  const spends: Spend[] = goals
+  const goalSpends: Spend[] = goals
     .flatMap((g) => {
       const idx = fromYM(g.spend ?? "");
       if (idx === null) return [];
       const amount = Number(g.target) || 0;
       if (amount <= 0) return [];
-      const linked = g.itemId && items.some((i) => i.id === g.itemId) ? g.itemId : undefined;
-      return [{ idx, goalId: g.id, name: g.name, amount, itemId: linked }];
+      // the pot to empty is whichever asset is fed by the goal's saving line
+      const pot = g.itemId ? assets.find((a) => a.feed === g.itemId) : undefined;
+      return [
+        { idx, id: g.id, name: g.name, amount, from: "goal" as const, assetId: pot?.id },
+      ];
     })
     .sort((a, b) => a.idx - b.idx);
 
@@ -179,9 +182,10 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
     odRate: Number(data.odRate) || 0,
     horizon,
     start,
-    spends,
+    spends: goalSpends,
   });
   const last = months[months.length - 1];
+  const spends = months.flatMap((m) => m.spends);
 
   const mIncome = avgOf(months, "income");
   const mExpense = avgOf(months, "expense");
@@ -308,7 +312,8 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
 
   /* what you're still committed to pay, net of what people send back */
   const committed = items.reduce((s, it) => {
-    if (it.kind !== "expense" || !it.last) return s;
+    // a funded line is already covered by the fund it draws on
+    if (it.kind !== "expense" || !it.last || it.fund) return s;
     const lastIdx = fromYM(it.last);
     if (lastIdx === null || lastIdx < start) return s;
     let t = 0;
@@ -325,7 +330,8 @@ export function derive(data: Data, start: number = nowIdx()): Derived {
   /* ── things that end ── */
   const ending: EndingRow[] = items
     .flatMap((it) => {
-      if (!it.last || it.kind === "income") return [];
+      // a funded line ending frees up the fund, not your account
+      if (!it.last || it.kind === "income" || it.fund) return [];
       const lastIdx = fromYM(it.last);
       if (lastIdx === null || lastIdx < start) return [];
       const perMonth =
@@ -463,13 +469,11 @@ export function projectAssets(
         vals[i] += feed.amount;
         contributed[i] += feed.amount;
       }
-      // a goal saved into this pot, spent this month, draws it back down
-      if (a.feed) {
-        for (const sp of spends) {
-          if (sp.idx === idx && sp.itemId === a.feed) {
-            vals[i] -= sp.amount;
-            withdrawn[i] += sp.amount;
-          }
+      // anything paid out of this fund this month draws it back down
+      for (const sp of spends) {
+        if (sp.idx === idx && sp.assetId === a.id) {
+          vals[i] -= sp.amount;
+          withdrawn[i] += sp.amount;
         }
       }
       row[a.id] = Math.round(vals[i]);

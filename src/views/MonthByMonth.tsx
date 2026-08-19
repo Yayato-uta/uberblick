@@ -17,6 +17,8 @@ export function MonthByMonth({
   k: number;
   setK: (k: number) => void;
 }) {
+  const fundName = (id: string | undefined) =>
+    id ? d.assets.find((a) => a.id === id)?.name : undefined;
   const idx = Math.min(Math.max(0, k), d.months.length - 1);
   const M = d.months[idx];
   const strip = useRef<HTMLDivElement>(null);
@@ -201,18 +203,33 @@ export function MonthByMonth({
             </span>
             <span className="text-xs text-soft">the pot pays, not the account</span>
           </div>
-          {M.spends.map((sp) => (
-            <div
-              key={sp.goalId}
-              className="flex justify-between gap-3 border-b border-rule px-3 py-2 text-sm"
-            >
-              <span>{sp.name}</span>
-              <span className={cx("font-mono tabular-nums", TEXT.green)}>{eur(sp.amount, 2)}</span>
-            </div>
-          ))}
+          {M.spends.map((sp) => {
+            const pot = fundName(sp.assetId);
+            return (
+              <div
+                key={sp.id}
+                className="flex justify-between gap-3 border-b border-rule px-3 py-2 text-sm"
+              >
+                <span>
+                  {sp.name}
+                  <span className="font-mono text-xs text-soft">
+                    {" · "}
+                    {pot
+                      ? `out of ${pot}`
+                      : sp.from === "goal"
+                        ? "out of what you put by"
+                        : "out of a fund"}
+                  </span>
+                </span>
+                <span className={cx("font-mono tabular-nums", TEXT.green)}>
+                  {eur(sp.amount, 2)}
+                </span>
+              </div>
+            );
+          })}
           <div className="bg-paper px-3 py-2 text-xs text-soft">
-            Already out of your account, month by month, on the way into the pot — so it doesn't
-            touch the {eur(M.balance)} above.
+            Money that was already put aside, so none of this touches the {eur(M.balance)} above —
+            it comes off what those funds are worth instead.
           </div>
         </div>
       )}

@@ -2,15 +2,18 @@ import type { Item } from "../types";
 import { occursIn, shortLabel } from "./month";
 import { reimbInMonth } from "./reimb";
 
-/** A goal's pot being spent on the thing it was saved for. */
+/** Money paid out of a fund rather than out of the current account. */
 export interface Spend {
   /** absolute month */
   idx: number;
-  goalId: string;
+  /** the goal id, or the item id for an expense paid from a fund */
+  id: string;
   name: string;
   amount: number;
-  /** the saving line that filled the pot, when the goal has one */
-  itemId?: string;
+  /** a goal's pot being spent, or an expense line drawing on a fund */
+  from: "goal" | "fund";
+  /** the Asset drawn down, where there is one to draw down */
+  assetId?: string;
 }
 
 export interface MonthRow {
@@ -47,7 +50,10 @@ export interface ForecastInput {
   odRate: number;
   horizon: number;
   start: number;
-  /** goal pots being spent; they show in the month but not against the balance */
+  /**
+   * Goal pots being spent. Expenses carrying a `fund` are picked up from
+   * `items` and need not be passed in here.
+   */
   spends?: Spend[];
 }
 
@@ -82,11 +88,34 @@ export function forecast({
     let reimb = 0;
     let irregular = 0;
     const hits: Item[] = [];
+    const drawn: Spend[] = [];
 
     for (const it of items) {
       const back = it.kind === "expense" ? reimbInMonth(it, idx) : 0;
       const due = occursIn(it, idx);
       if (!due && back === 0) continue;
+
+      /* An expense paid from a fund never reaches the current account, so it
+         belongs in neither `expense` nor the balance — it draws its fund down
+         instead, on its own schedule. */
+      if (it.kind === "expense" && it.fund) {
+        if (due) {
+          drawn.push({
+            idx,
+            id: it.id,
+            name: it.name,
+            amount: it.amount,
+            from: "fund",
+            assetId: it.fund,
+          });
+        }
+        if (back > 0) {
+          hits.push(it);
+          reimb += back;
+        }
+        continue;
+      }
+
       hits.push(it);
       if (!due) {
         // money back in a month with nothing going out
@@ -110,7 +139,7 @@ export function forecast({
     bal -= interest;
     net -= interest;
 
-    const spent = spends.filter((sp) => sp.idx === idx);
+    const spent = [...spends.filter((sp) => sp.idx === idx), ...drawn];
 
     rows.push({
       idx,

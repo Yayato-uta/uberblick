@@ -1,6 +1,6 @@
 ﻿import { useState } from "react";
 import { Check, Plus, X } from "lucide-react";
-import type { Freq, Item, Kind } from "../types";
+import type { Asset, Freq, Item, Kind } from "../types";
 import { CATEGORIES, FREQ, KIND } from "../lib/constants";
 import { parsePos, uid } from "../lib/format";
 import { nowIdx, toYM } from "../lib/month";
@@ -25,6 +25,8 @@ export interface ItemDraft {
   reimbFirst: string;
   reimbLast: string;
   extras: { month: string; amount: string }[];
+  /** Asset id this comes out of, or "" for the current account */
+  fund: string;
 }
 
 export const blankDraft = (): ItemDraft => ({
@@ -43,6 +45,7 @@ export const blankDraft = (): ItemDraft => ({
   reimbFirst: "",
   reimbLast: "",
   extras: [],
+  fund: "",
 });
 
 export const draftFromItem = (it: Item): ItemDraft => ({
@@ -61,14 +64,18 @@ export const draftFromItem = (it: Item): ItemDraft => ({
   reimbFirst: it.reimb?.first || it.first,
   reimbLast: it.reimb?.last ?? "",
   extras: (it.reimb?.extras ?? []).map((e) => ({ month: e.month, amount: String(e.amount) })),
+  fund: it.fund ?? "",
 });
 
 export function ItemSheet({
   draft,
+  assets,
   onSave,
   onClose,
 }: {
   draft: ItemDraft | null;
+  /** the funds an expense can be paid out of */
+  assets: Asset[];
   onSave: (item: Item) => void;
   onClose: () => void;
 }) {
@@ -103,6 +110,9 @@ export function ItemSheet({
       first: f.first,
       last: f.last || "",
     };
+    if (f.kind === "expense" && f.fund && assets.some((a) => a.id === f.fund)) {
+      item.fund = f.fund;
+    }
     if (f.reimbOn && f.kind === "expense") {
       const amount = parsePos(f.reimbAmount);
       const extras = f.extras
@@ -215,6 +225,27 @@ export function ItemSheet({
             label="Last payment"
           />
         </Field>
+
+        {f.kind === "expense" && assets.length > 0 && (
+          <Field
+            label="Paid from"
+            wide
+            hint={
+              f.fund
+                ? "It empties that fund on the schedule above and never touches your account balance."
+                : "Point it at a fund and it comes out of there instead of your account."
+            }
+          >
+            <Select value={f.fund} onChange={(e) => set({ fund: e.target.value })}>
+              <option value="">My account</option>
+              {assets.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
       </div>
 
       {f.kind === "expense" && (

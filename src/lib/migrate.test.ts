@@ -270,3 +270,36 @@ describe("the goal spend month", () => {
   });
 });
 
+describe("the fund an expense is paid from", () => {
+  const withFund = {
+    items: [
+      { id: "roof", name: "Roof", kind: "expense", amount: 1500, freq: "yearly", first: "2026-08", fund: "pot" },
+    ],
+    assets: [{ id: "pot", name: "House pot", kind: "savings", value: 12000, rate: 0 }],
+  };
+
+  it("is absent in older backups, and absent means the account", () => {
+    const d = migrate({ items: [{ id: "a", name: "Rent", kind: "expense", amount: 900, freq: "monthly", first: "2026-08" }] })!;
+    expect(d.items[0].fund).toBeUndefined();
+  });
+
+  it("survives a round trip", () => {
+    const d = migrate(withFund)!;
+    expect(d.items[0].fund).toBe("pot");
+    expect(migrate(JSON.parse(JSON.stringify(d)))!.items[0].fund).toBe("pot");
+  });
+
+  it("un-sets a fund pointing at an asset that no longer exists", () => {
+    const d = migrate({ ...withFund, assets: [] })!;
+    expect(d.items[0].fund).toBeUndefined();
+  });
+
+  it("is only ever set on an expense", () => {
+    const d = migrate({
+      items: [{ id: "s", name: "Sparen", kind: "saving", amount: 100, freq: "monthly", first: "2026-08", fund: "pot" }],
+      assets: withFund.assets,
+    })!;
+    expect(d.items[0].fund).toBeUndefined();
+  });
+});
+

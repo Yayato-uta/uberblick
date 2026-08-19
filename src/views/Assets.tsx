@@ -10,7 +10,7 @@ import {
 import { Plus, Trash2 } from "lucide-react";
 import type { Asset, AssetKind, Item } from "../types";
 import type { Derived } from "../lib/derive";
-import { ASSET_KINDS, assetColor } from "../lib/constants";
+import { ASSET_KINDS, FREQ, assetColor } from "../lib/constants";
 import { eur, eurAxis, parseNum } from "../lib/format";
 import { longLabel, shortLabel } from "../lib/month";
 import { usePalette } from "../hooks/useTheme";
@@ -52,6 +52,8 @@ export function Assets({
       <Prose>
         What you've already built. Link a pot to the monthly saving that feeds it and the chart
         carries it forward — the car included, since it loses value the same way the others gain it.
+        To spend a pot, set an expense's <em>Paid from</em> to it over in All items: it empties on
+        that line's own schedule and leaves your account balance alone.
       </Prose>
 
       <AssetForm onAdd={onAdd} savingItems={savingItems} />
@@ -68,7 +70,7 @@ export function Assets({
               tone="green"
               note={
                 d.takenOut > 0.5
-                  ? `${eur(d.putIn)} from you, ${eur(d.growth)} from growth, ${eur(d.takenOut)} spent on a goal.`
+                  ? `${eur(d.putIn)} from you, ${eur(d.growth)} from growth, ${eur(d.takenOut)} paid back out.`
                   : `${eur(d.putIn)} from you, ${eur(d.growth)} from growth.`
               }
             />
@@ -157,6 +159,10 @@ export function Assets({
               const Icon = K.icon;
               const feed = a.feed ? items.find((it) => it.id === a.feed) : undefined;
               const end = d.assetSeries.ending[i] ?? 0;
+              // what empties it: expenses pointed at it, plus any goal spend
+              const draws = items.filter((it) => it.fund === a.id);
+              const goalDraws = d.spends.filter((sp) => sp.from === "goal" && sp.assetId === a.id);
+              const takenOut = d.assetSeries.withdrawn[i] ?? 0;
               return (
                 <div
                   key={a.id}
@@ -173,6 +179,25 @@ export function Assets({
                         ? ` · fed by ${feed.name}, ${eur(feed.amount)}/mo`
                         : " · no monthly top-up"}
                     </div>
+
+                    {(draws.length > 0 || goalDraws.length > 0) && (
+                      <div className="mt-1 font-mono text-xs text-green">
+                        paid out of it:{" "}
+                        {[
+                          ...draws.map(
+                            (it) =>
+                              `${it.name} ${eur(it.amount)} ${FREQ[it.freq].label.toLowerCase()}`,
+                          ),
+                          ...goalDraws.map((sp) => `${sp.name} ${eur(sp.amount)} once`),
+                        ].join(" · ")}
+                        {takenOut > 0.5 && (
+                          <span className="text-soft">
+                            {" "}
+                            — {eur(takenOut)} out of it over {d.horizon}m
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <Label>Worth now</Label>

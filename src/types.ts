@@ -50,6 +50,12 @@ export interface Item {
   last: YM;
   /** expenses only — somebody sends this much back each time */
   reimb?: Reimb;
+  /**
+   * Expenses only — the `Asset.id` of the fund this is paid out of, instead of
+   * the current account. The fund empties on this item's own schedule, so a
+   * one-off empties it at once and a monthly line drains it gradually.
+   */
+  fund?: string;
 }
 
 export interface Goal {

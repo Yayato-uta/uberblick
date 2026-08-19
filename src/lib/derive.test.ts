@@ -569,3 +569,80 @@ describe("goals without a spend month", () => {
   });
 });
 
+describe("an expense paid out of a fund", () => {
+  const pot = { id: "pot", name: "House pot", kind: "savings" as const, value: 12000, rate: 0 };
+
+  /* Quarterly, out of the pot: the fund empties in instalments rather than all
+     at once, and the current account never sees any of it. */
+  const roof = item({
+    id: "roof",
+    name: "Roof repairs",
+    kind: "expense",
+    amount: 1500,
+    freq: "quarterly",
+    first: toYM(START),
+    last: toYM(START + 9),
+    fund: "pot",
+  });
+
+  const d = derive(plan({ horizon: 12, items: [roof], assets: [pot] }), START);
+
+  it("never leaves the account", () => {
+    expect(d.months.every((m) => m.expense === 0)).toBe(true);
+    expect(d.months.every((m) => m.balance === 0)).toBe(true);
+    expect(d.mExpense).toBe(0);
+    expect(d.netCost).toBe(0);
+  });
+
+  it("shows in the months it falls due, and only those", () => {
+    const due = d.months.filter((m) => m.fromSavings > 0).map((m) => m.k);
+    expect(due).toEqual([0, 3, 6, 9]);
+    expect(d.months[0].spends[0]).toMatchObject({ name: "Roof repairs", amount: 1500, from: "fund" });
+  });
+
+  it("empties the fund on its own schedule", () => {
+    // four payments of 1500 out of 12000
+    expect(d.assetSeries.rows[0].pot).toBe(10500);
+    expect(d.assetSeries.rows[3].pot).toBe(9000);
+    expect(d.assetSeries.ending[0]).toBeCloseTo(6000, 6);
+    expect(d.takenOut).toBe(6000);
+  });
+
+  it("counts the drawdown as spent rather than as the fund shrinking", () => {
+    expect(d.growth).toBeCloseTo(0, 6);
+  });
+
+  it("is not a claim on your account, so it isn't committed", () => {
+    expect(d.committed).toBe(0);
+  });
+
+  it("frees up nothing in your pocket when it ends", () => {
+    expect(d.ending).toHaveLength(0);
+    expect(d.freedTotal).toBe(0);
+  });
+
+  it("keeps it out of the expense groups, which are account-facing", () => {
+    expect(d.months[0].hits).toHaveLength(0);
+  });
+});
+
+describe("an expense whose fund is the account", () => {
+  it("behaves exactly as before", () => {
+    const normal = item({
+      id: "roof",
+      name: "Roof repairs",
+      kind: "expense",
+      amount: 1500,
+      freq: "quarterly",
+      first: toYM(START),
+      last: toYM(START + 9),
+    });
+    const d = derive(plan({ horizon: 12, items: [normal] }), START);
+    expect(d.months[0].expense).toBe(1500);
+    expect(d.months[0].fromSavings).toBe(0);
+    expect(d.months[0].irregular).toBe(1500);
+    expect(d.committed).toBe(6000);
+    expect(d.ending).toHaveLength(1);
+  });
+});
+
