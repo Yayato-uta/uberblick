@@ -1,18 +1,35 @@
 import { describe, expect, it } from "vitest";
-import type { Item } from "../types";
+import type { Item, Reimb } from "../types";
 import { avgOf, forecast } from "./forecast";
 import { fromYM } from "./month";
 
 const START = fromYM("2026-08")!;
 
-const item = (over: Partial<Item> & Pick<Item, "name" | "kind" | "amount">): Item => ({
-  id: over.name,
-  cat: "Other",
-  freq: "monthly",
-  first: "2026-08",
-  last: "",
-  ...over,
-});
+/* A repayment may be given as just {who, amount} — the shape the earliest
+   backups used, meaning "follows the expense exactly". Filling it out here is
+   what the migration does on load, so these tests keep asserting the old
+   behaviour against the new model. */
+type LooseReimb = { who: string; amount: number } & Partial<Reimb>;
+type Loose = Omit<Partial<Item>, "reimb"> & { reimb?: LooseReimb };
+
+function fill(o: Omit<Item, "reimb"> & { reimb?: LooseReimb }): Item {
+  const { reimb, ...rest } = o;
+  if (!reimb) return rest;
+  return {
+    ...rest,
+    reimb: { freq: rest.freq, first: rest.first, last: rest.last, extras: [], ...reimb },
+  };
+}
+
+const item = (over: Loose & Pick<Item, "name" | "kind" | "amount">): Item =>
+  fill({
+    id: over.name,
+    cat: "Other",
+    freq: "monthly",
+    first: "2026-08",
+    last: "",
+    ...over,
+  });
 
 describe("forecast", () => {
   it("carries the balance forward month by month", () => {
@@ -131,3 +148,111 @@ describe("forecast", () => {
     expect(twentyFour[12].expense).toBe(240);
   });
 });
+
+describe("a repayment running on its own clock", () => {
+  /* The brief's worked example: 3600 out in one go, repaid at 300 a month for
+     the twelve months after. */
+  const oneoff = item({
+    name: "Deposit fronted",
+    kind: "expense",
+    amount: 3600,
+    freq: "oneoff",
+    first: "2026-08",
+    last: "2026-08",
+    reimb: {
+      who: "Friend",
+      amount: 300,
+      freq: "monthly",
+      first: "2026-09",
+      last: "2027-08",
+      extras: [],
+    },
+  });
+
+  const rows = forecast({ items: [oneoff], opening: 0, odRate: 0, horizon: 13, start: START });
+
+  it("shows the full amount out in the first month and nothing back", () => {
+    expect(rows[0].expense).toBe(3600);
+    expect(rows[0].reimb).toBe(0);
+    expect(rows[0].net).toBe(-3600);
+  });
+
+  it("collects the repayments in the months after, with no expense going out", () => {
+    for (let k = 1; k <= 12; k++) {
+      expect(rows[k].expense).toBe(0);
+      expect(rows[k].reimb).toBe(300);
+      expect(rows[k].net).toBe(300);
+    }
+  });
+
+  it("keeps the item in those months so the breakdown can show it", () => {
+    // it is here for the repayment alone — the view marks it "repayment only"
+    expect(rows[5].hits.map((i) => i.id)).toContain("Deposit fronted");
+  });
+
+  it("comes out level once every instalment has landed", () => {
+    expect(rows[12].balance).toBe(0);
+  });
+});
+
+describe("a lump sum outside the regular rate", () => {
+  const financed = item({
+    name: "Financing",
+    kind: "expense",
+    amount: 200,
+    first: "2026-08",
+    last: "2027-07",
+    reimb: {
+      who: "Partner",
+      amount: 100,
+      freq: "monthly",
+      first: "2026-08",
+      last: "2026-09",
+      extras: [{ month: "2026-11", amount: 500 }],
+    },
+  });
+
+  const rows = forecast({ items: [financed], opening: 0, odRate: 0, horizon: 6, start: START });
+
+  it("lands in its month even though no instalment is due then", () => {
+    expect(rows[3].reimb).toBe(500);
+    expect(rows[3].expense).toBe(200);
+  });
+
+  it("leaves the months around it alone", () => {
+    expect(rows[2].reimb).toBe(0);
+    expect(rows[4].reimb).toBe(0);
+  });
+});
+
+describe("a repayment that stops before the expense does", () => {
+  const shared = item({
+    name: "Shared loan",
+    kind: "expense",
+    amount: 400,
+    first: "2026-08",
+    last: "2027-07",
+    reimb: {
+      who: "Sister",
+      amount: 400,
+      freq: "monthly",
+      first: "2026-08",
+      last: "2026-10",
+      extras: [],
+    },
+  });
+
+  const rows = forecast({ items: [shared], opening: 0, odRate: 0, horizon: 6, start: START });
+
+  it("is a wash while they are still paying", () => {
+    expect(rows[0].net).toBe(0);
+    expect(rows[2].net).toBe(0);
+  });
+
+  it("lands wholly on you the month after they stop", () => {
+    expect(rows[3].expense).toBe(400);
+    expect(rows[3].reimb).toBe(0);
+    expect(rows[3].net).toBe(-400);
+  });
+});
+

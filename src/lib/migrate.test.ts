@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { migrate } from "./migrate";
 import { SCHEMA_VERSION } from "./constants";
 
-/* A file exported by the original single-file version: no schemaVersion, no
-   goals or assets arrays, no overdraft settings. */
+/* A file exported by the earliest single-file version: no schemaVersion, no
+   goals or assets arrays, no overdraft settings, and a repayment given as bare
+   {who, amount} that implicitly followed the expense. */
 const v0 = {
   items: [
     {
@@ -40,7 +41,15 @@ describe("migrate", () => {
     expect(d.schemaVersion).toBe(SCHEMA_VERSION);
     expect(d.items).toHaveLength(2);
     expect(d.items[0]).toEqual(v0.items[0]);
-    expect(d.items[1].reimb).toEqual({ who: "Fiancé", amount: 320 });
+    // the repayment always meant "follows the expense" — now written out
+    expect(d.items[1].reimb).toEqual({
+      who: "Fiancé",
+      amount: 320,
+      freq: "monthly",
+      first: "2026-03",
+      last: "2029-03",
+      extras: [],
+    });
     expect(d.opening).toBe(-1200);
     // the fields that version never had come in at their defaults
     expect(d.goals).toEqual([]);
@@ -107,5 +116,127 @@ describe("migrate", () => {
     })!;
     expect(d.goals[0].itemId).toBeUndefined();
     expect(d.assets[0].feed).toBeUndefined();
+  });
+});
+
+/* A file exported by the later single-file version: repayments carry their own
+   frequency, their own dates, and lump sums on top. */
+const withSchedule = {
+  items: [
+    {
+      id: "b1",
+      name: "Deposit paid for a friend",
+      kind: "expense",
+      cat: "Family",
+      amount: 3600,
+      freq: "oneoff",
+      first: "2026-03",
+      last: "2026-03",
+      reimb: {
+        who: "Friend",
+        amount: 300,
+        freq: "monthly",
+        first: "2026-04",
+        last: "2027-03",
+        extras: [{ month: "2026-12", amount: 500 }],
+      },
+    },
+    {
+      id: "b2",
+      name: "Shared loan",
+      kind: "expense",
+      cat: "Debt & financing",
+      amount: 400,
+      freq: "monthly",
+      first: "2026-01",
+      last: "2030-01",
+      // their share stops years before the loan does
+      reimb: { who: "Sister", amount: 200, freq: "monthly", first: "", last: "2027-06", extras: [] },
+    },
+  ],
+  opening: 0,
+  horizon: 24,
+};
+
+describe("migrating a repayment that runs on its own clock", () => {
+  const d = migrate(withSchedule)!;
+
+  it("keeps the repayment's own frequency and dates", () => {
+    expect(d.items[0].reimb).toEqual({
+      who: "Friend",
+      amount: 300,
+      freq: "monthly",
+      first: "2026-04",
+      last: "2027-03",
+      extras: [{ month: "2026-12", amount: 500 }],
+    });
+  });
+
+  it("keeps a blank first, which means 'follow the expense'", () => {
+    expect(d.items[1].reimb!.first).toBe("");
+    expect(d.items[1].reimb!.last).toBe("2027-06");
+  });
+
+  it("never fills a stored schedule in from the item", () => {
+    // the expense is a one-off; the repayment is emphatically not
+    expect(d.items[0].freq).toBe("oneoff");
+    expect(d.items[0].reimb!.freq).toBe("monthly");
+  });
+
+  it("drops lump sums with no month or no money, and keeps the rest", () => {
+    const m = migrate({
+      items: [
+        {
+          ...withSchedule.items[0],
+          reimb: {
+            ...withSchedule.items[0].reimb,
+            extras: [
+              { month: "2026-12", amount: 500 },
+              { month: "", amount: 100 },
+              { month: "2027-01", amount: 0 },
+              { month: "2027-2", amount: "1.250,50" },
+              null,
+            ],
+          },
+        },
+      ],
+    })!;
+    expect(m.items[0].reimb!.extras).toEqual([
+      { month: "2026-12", amount: 500 },
+      { month: "2027-02", amount: 1250.5 },
+    ]);
+  });
+
+  it("keeps a repayment made only of lump sums", () => {
+    const m = migrate({
+      items: [
+        {
+          id: "c1",
+          name: "Holiday fronted",
+          kind: "expense",
+          amount: 1200,
+          freq: "oneoff",
+          first: "2026-06",
+          last: "2026-06",
+          reimb: { who: "Brother", amount: 0, freq: "monthly", first: "", last: "", extras: [{ month: "2026-09", amount: 1200 }] },
+        },
+      ],
+    })!;
+    expect(m.items[0].reimb).toBeTruthy();
+    expect(m.items[0].reimb!.amount).toBe(0);
+    expect(m.items[0].reimb!.extras).toHaveLength(1);
+  });
+
+  it("drops a repayment with neither an instalment nor a lump sum", () => {
+    const m = migrate({
+      items: [{ id: "d", name: "X", kind: "expense", amount: 10, freq: "monthly", first: "2026-01", reimb: { who: "Nobody", amount: 0 } }],
+    })!;
+    expect(m.items[0].reimb).toBeUndefined();
+  });
+
+  it("round-trips its own export untouched", () => {
+    const once = migrate(withSchedule)!;
+    const twice = migrate(JSON.parse(JSON.stringify(once)))!;
+    expect(twice).toEqual(once);
   });
 });
