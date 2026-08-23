@@ -45,7 +45,16 @@ export function Assets({
   const narrow = useIsNarrow();
   const savingItems = items.filter((i) => i.kind === "saving");
   const endLabel = shortLabel(d.start + d.horizon - 1);
-  const tickInterval = narrow ? (d.horizon > 12 ? 2 : 1) : d.horizon > 18 ? 1 : 0;
+  // same six-label ceiling as the cash-flow chart, for the same reason
+  const tickInterval = narrow
+    ? d.horizon > 18
+      ? 3
+      : d.horizon > 12
+        ? 2
+        : 1
+    : d.horizon > 18
+      ? 1
+      : 0;
 
   return (
     <div className="mt-6">

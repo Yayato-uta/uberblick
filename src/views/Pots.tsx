@@ -77,7 +77,10 @@ export function Pots({
         <div className="flex-1 text-center">
           <div className="font-mono text-lg">{fullLabel(d.potMonthIdx)}</div>
           {!thisMonth && (
-            <button onClick={() => onStep(d.start - d.potMonthIdx)} className="u-label underline">
+            <button
+              onClick={() => onStep(d.start - d.potMonthIdx)}
+              className="u-label min-h-touch px-2 underline"
+            >
               back to this month
             </button>
           )}
@@ -297,7 +300,7 @@ function PotCard({
           <button
             onClick={() => setOpen((v) => !v)}
             aria-expanded={open}
-            className="u-label w-full text-left underline"
+            className="u-label flex min-h-touch w-full items-center text-left underline"
           >
             {p.purchases.length} purchase{p.purchases.length === 1 ? "" : "s"} in{" "}
             {fullLabel(monthIdx)} {open ? "▴" : "▾"}

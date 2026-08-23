@@ -248,6 +248,51 @@ export default function App() {
 
   const nudge = ready && !nudgeHidden && edits >= NUDGE_AFTER;
 
+  /** The same three actions in the desktop header and the phone's More sheet. */
+  const dataActions = (close: () => void = () => {}) => (
+    <>
+      {install.canPrompt && (
+        <Btn
+          className="w-full sm:w-auto"
+          onClick={() => {
+            close();
+            void install.install();
+          }}
+        >
+          <Smartphone size={13} /> Install
+        </Btn>
+      )}
+      <Btn
+        className="w-full sm:w-auto"
+        onClick={() => {
+          close();
+          void doExport();
+        }}
+      >
+        <Download size={13} /> Back up
+      </Btn>
+      <Btn
+        className="w-full sm:w-auto"
+        onClick={() => {
+          close();
+          fileRef.current?.click();
+        }}
+      >
+        <Upload size={13} /> Restore
+      </Btn>
+      <Btn
+        tone="danger"
+        className="w-full sm:w-auto"
+        onClick={() => {
+          close();
+          clearAll();
+        }}
+      >
+        <RotateCcw size={13} /> Start empty
+      </Btn>
+    </>
+  );
+
   return (
     <div className="min-h-screen w-full bg-paper text-ink">
       {/* bottom padding clears the fixed phone nav and the home indicator */}
@@ -260,33 +305,20 @@ export default function App() {
               Every euro that moves, month by month — including the ones that aren't really yours.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {install.canPrompt && (
-              <Btn onClick={install.install}>
-                <Smartphone size={13} /> Install
-              </Btn>
-            )}
-            <Btn onClick={() => void doExport()}>
-              <Download size={13} /> Back up
-            </Btn>
-            <Btn onClick={() => fileRef.current?.click()}>
-              <Upload size={13} /> Restore
-            </Btn>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                if (file) void doImport(file);
-              }}
-            />
-            <Btn tone="danger" onClick={clearAll}>
-              <RotateCcw size={13} /> Start empty
-            </Btn>
-          </div>
+          {/* On a phone these live behind More: they're used rarely, and one of
+              them wipes everything — neither deserves the top of every screen. */}
+          <div className="hidden flex-wrap gap-2 sm:flex">{dataActions()}</div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void doImport(file);
+            }}
+          />
         </header>
 
         {/* notices */}
@@ -402,7 +434,14 @@ export default function App() {
         </footer>
       </div>
 
-      <BottomNav tab={tab} onPick={setTab} counts={counts} />
+      <BottomNav
+        tab={tab}
+        onPick={setTab}
+        counts={counts}
+        dataActions={(close) => (
+          <div className="flex flex-col gap-2">{dataActions(close)}</div>
+        )}
+      />
 
       <ItemSheet
         draft={draft}

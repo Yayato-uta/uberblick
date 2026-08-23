@@ -56,7 +56,17 @@ export function Overview({
   const { months, floor, horizon, lowest, heaviest, breach, clearsBy, headroom } = d;
   const end = d.last;
 
-  const tickInterval = narrow ? (horizon > 12 ? 2 : 1) : horizon > 18 ? 1 : 0;
+  /* On a phone six labels is what fits: any more and "Aug 26Nov 26" runs
+     together into one string. Drop labels rather than shrink the type. */
+  const tickInterval = narrow
+    ? horizon > 18
+      ? 3
+      : horizon > 12
+        ? 2
+        : 1
+    : horizon > 18
+      ? 1
+      : 0;
 
   return (
     <div className="mt-6">

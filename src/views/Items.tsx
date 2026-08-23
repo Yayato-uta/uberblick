@@ -92,13 +92,12 @@ function Row({
   const perMonth = monthlyEquivalent(it.amount, it.freq);
 
   return (
-    <div
-      className={cx(
-        "u-card flex flex-wrap items-center gap-3 px-3 py-3",
-        done && "opacity-45",
-      )}
-    >
-      <div className="min-w-[9rem] flex-1">
+    /* Three fixed columns, never wrapping: a name that grows, then the figure
+       and the actions. Wrapping made the amounts land at a different x on
+       every row, which in a design that lives on aligned figures reads as a
+       fault rather than as a layout. */
+    <div className={cx("u-card flex items-start gap-2 px-3 py-3 sm:gap-3", done && "opacity-45")}>
+      <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">{it.name}</div>
         <div className="mt-0.5 font-mono text-xs text-soft">
           {it.cat} · {FREQ[it.freq].label.toLowerCase()}
@@ -109,28 +108,34 @@ function Row({
             </>
           )}
         </div>
-        <div className="flex flex-wrap gap-1">
-          {it.reimb && (
-            <div className="mt-1 inline-block border border-ochre px-1.5 py-0.5 font-mono text-xs text-ochre">
-              {it.reimb.who} sends back {eur(it.reimb.amount)}
-            </div>
-          )}
-          {fund && (
-            <div className="mt-1 inline-block border border-green px-1.5 py-0.5 font-mono text-xs text-green">
-              paid from {fund.name}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="text-right">
-        <div className={cx("font-mono tabular-nums", TEXT[tone])}>{eur(it.amount, 2)}</div>
-        {it.freq !== "monthly" && it.freq !== "oneoff" && (
-          <div className="font-mono text-xs text-soft">= {eur(perMonth)}/mo</div>
+        {(it.reimb || fund) && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {it.reimb && (
+              <span className="border border-ochre px-1.5 py-0.5 font-mono text-2xs text-ochre">
+                {it.reimb.who} sends back {eur(it.reimb.amount)}
+              </span>
+            )}
+            {fund && (
+              <span className="border border-green px-1.5 py-0.5 font-mono text-2xs text-green">
+                paid from {fund.name}
+              </span>
+            )}
+          </div>
         )}
       </div>
 
-      <div className="flex gap-1">
+      <div className="shrink-0 text-right">
+        <div className={cx("whitespace-nowrap font-mono text-sm tabular-nums", TEXT[tone])}>
+          {eur(it.amount, 2)}
+        </div>
+        {it.freq !== "monthly" && it.freq !== "oneoff" && (
+          <div className="whitespace-nowrap font-mono text-xs text-soft">
+            = {eur(perMonth)}/mo
+          </div>
+        )}
+      </div>
+
+      <div className="flex shrink-0">
         <IconBtn onClick={onEdit} title="Edit" aria-label={`Edit ${it.name}`}>
           <Pencil size={16} />
         </IconBtn>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   CalendarClock,
   CalendarDays,
@@ -65,7 +65,7 @@ export function DesktopTabs({
           onClick={() => onPick(t.id)}
           aria-current={tab === t.id ? "page" : undefined}
           className={cx(
-            "whitespace-nowrap border-b-2 px-3 py-3 font-mono text-xs uppercase tracking-widest",
+            "min-h-touch whitespace-nowrap border-b-2 px-3 font-mono text-xs uppercase tracking-widest",
             tab === t.id ? "border-ink text-ink" : "border-transparent text-soft",
           )}
         >
@@ -85,10 +85,13 @@ export function BottomNav({
   tab,
   onPick,
   counts,
+  dataActions,
 }: {
   tab: TabId;
   onPick: (t: TabId) => void;
   counts: TabCounts;
+  /** back up / restore / start empty — no room for them above the fold on a phone */
+  dataActions?: (close: () => void) => ReactNode;
 }) {
   const [more, setMore] = useState(false);
   const secondaries = TABS.filter((t) => t.secondary);
@@ -164,6 +167,13 @@ export function BottomNav({
             );
           })}
         </div>
+
+        {dataActions && (
+          <div className="mt-5 border-t border-rule pt-4">
+            <div className="u-label mb-2">Your data</div>
+            {dataActions(() => setMore(false))}
+          </div>
+        )}
       </Sheet>
     </>
   );
