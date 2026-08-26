@@ -34,6 +34,12 @@ export interface Reimb {
   last: YM;
   /** ad-hoc lump sums outside the regular rate */
   extras: ReimbExtra[];
+  /**
+   * What actually came in a given month, INSTEAD of the scheduled instalment.
+   * Zero means they paid nothing that month; a smaller figure means they paid
+   * less; a run of them is a pause. Absent months follow the schedule.
+   */
+  overrides: ReimbExtra[];
 }
 
 export interface Item {

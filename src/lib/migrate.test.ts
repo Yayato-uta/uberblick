@@ -49,6 +49,7 @@ describe("migrate", () => {
       first: "2026-03",
       last: "2029-03",
       extras: [],
+      overrides: [],
     });
     expect(d.opening).toBe(-1200);
     // the fields that version never had come in at their defaults
@@ -169,6 +170,7 @@ describe("migrating a repayment that runs on its own clock", () => {
       first: "2026-04",
       last: "2027-03",
       extras: [{ month: "2026-12", amount: 500 }],
+      overrides: [],
     });
   });
 
@@ -364,6 +366,101 @@ describe("budget pots", () => {
       pots: [{ id: "food", name: "Food", monthly: 300, from: "2026-08", last: "", opening: 0 }],
       purchases: [{ id: "p1", potId: "food", date: "2026-08-03", note: "Billa", amount: 47.2 }],
     })!;
+    expect(migrate(JSON.parse(JSON.stringify(once)))).toEqual(once);
+  });
+});
+
+describe("months a repayment went differently", () => {
+  const withOverrides = {
+    items: [
+      {
+        id: "phone",
+        name: "Sara's phone",
+        kind: "expense",
+        amount: 32,
+        freq: "monthly",
+        first: "2026-01",
+        last: "2028-04",
+        reimb: {
+          who: "Sara",
+          amount: 20,
+          freq: "monthly",
+          first: "",
+          last: "",
+          extras: [],
+          overrides: [
+            { month: "2026-3", amount: 0 },
+            { month: "2026-04", amount: "5,50" },
+          ],
+        },
+      },
+    ],
+  };
+
+  it("is absent in older backups, meaning every month went as agreed", () => {
+    const d = migrate({
+      items: [
+        {
+          id: "a",
+          name: "Loan",
+          kind: "expense",
+          amount: 100,
+          freq: "monthly",
+          first: "2026-01",
+          reimb: { who: "X", amount: 50 },
+        },
+      ],
+    })!;
+    expect(d.items[0].reimb!.overrides).toEqual([]);
+  });
+
+  it("keeps a zero, because that is how a skipped month is written", () => {
+    const d = migrate(withOverrides)!;
+    expect(d.items[0].reimb!.overrides).toEqual([
+      { month: "2026-03", amount: 0 },
+      { month: "2026-04", amount: 5.5 },
+    ]);
+  });
+
+  it("keeps a repayment that is nothing but skipped months", () => {
+    const d = migrate({
+      items: [
+        {
+          id: "a",
+          name: "Loan",
+          kind: "expense",
+          amount: 100,
+          freq: "monthly",
+          first: "2026-01",
+          reimb: { who: "X", amount: 0, freq: "monthly", overrides: [{ month: "2026-02", amount: 0 }] },
+        },
+      ],
+    })!;
+    expect(d.items[0].reimb).toBeTruthy();
+    expect(d.items[0].reimb!.overrides).toHaveLength(1);
+  });
+
+  it("drops one with no usable month, and keeps one ruling per month", () => {
+    const d = migrate({
+      items: [
+        {
+          ...withOverrides.items[0],
+          reimb: {
+            ...withOverrides.items[0].reimb,
+            overrides: [
+              { month: "2026-03", amount: 0 },
+              { month: "nope", amount: 10 },
+              { month: "2026-03", amount: 99 },
+            ],
+          },
+        },
+      ],
+    })!;
+    expect(d.items[0].reimb!.overrides).toEqual([{ month: "2026-03", amount: 0 }]);
+  });
+
+  it("round-trips its own export", () => {
+    const once = migrate(withOverrides)!;
     expect(migrate(JSON.parse(JSON.stringify(once)))).toEqual(once);
   });
 });

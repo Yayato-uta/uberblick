@@ -106,8 +106,8 @@ export function sampleItems(): Item[] {
     { id: uid(), name: "Annual transport pass", kind: "expense", cat: "Transport", amount: 400, freq: "yearly", first: toYM(T + 5), last: "" },
 
     { id: uid(), name: "Appliance instalments", kind: "expense", cat: "Debt & financing", amount: 50, freq: "monthly", first: toYM(T - 9), last: toYM(T + 2) },
-    { id: uid(), name: "Shared loan", kind: "expense", cat: "Debt & financing", amount: 300, freq: "monthly", first: toYM(T - 5), last: toYM(T + 31), reimb: { who: "Partner", amount: 300, freq: "monthly", first: "", last: "", extras: [] } },
-    { id: uid(), name: "Second phone contract", kind: "expense", cat: "Family", amount: 30, freq: "monthly", first: toYM(T - 3), last: toYM(T + 20), reimb: { who: "Family member", amount: 30, freq: "monthly", first: "", last: "", extras: [] } },
+    { id: uid(), name: "Shared loan", kind: "expense", cat: "Debt & financing", amount: 300, freq: "monthly", first: toYM(T - 5), last: toYM(T + 31), reimb: { who: "Partner", amount: 300, freq: "monthly", first: "", last: "", extras: [], overrides: [] } },
+    { id: uid(), name: "Second phone contract", kind: "expense", cat: "Family", amount: 30, freq: "monthly", first: toYM(T - 3), last: toYM(T + 20), reimb: { who: "Family member", amount: 30, freq: "monthly", first: "", last: "", extras: [], overrides: [] } },
 
     { id: uid(), name: "Savings plan", kind: "saving", cat: "Savings", amount: 100, freq: "monthly", first: toYM(T - 12), last: "" },
     { id: uid(), name: "Investment plan", kind: "saving", cat: "Investing", amount: 150, freq: "monthly", first: toYM(T - 12), last: "" },

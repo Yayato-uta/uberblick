@@ -17,7 +17,14 @@ function fill(o: Omit<Item, "reimb"> & { reimb?: LooseReimb }): Item {
   if (!reimb) return rest;
   return {
     ...rest,
-    reimb: { freq: rest.freq, first: rest.first, last: rest.last, extras: [], ...reimb },
+    reimb: {
+      freq: rest.freq,
+      first: rest.first,
+      last: rest.last,
+      extras: [],
+      overrides: [],
+      ...reimb,
+    },
   };
 }
 

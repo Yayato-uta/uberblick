@@ -88,6 +88,26 @@ function normExtras(raw: unknown): ReimbExtra[] {
 }
 
 /**
+ * An override says what turned up in a month instead of the instalment, so
+ * unlike a lump sum, zero is its whole point — it's how "they paid nothing
+ * that month" is recorded. Only the month has to be usable.
+ */
+function normOverrides(raw: unknown): ReimbExtra[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ReimbExtra[] = [];
+  const seen = new Set<string>();
+  for (const e of raw) {
+    if (!isObj(e)) continue;
+    const month = normYM(e.month);
+    // one ruling per month, and the last one written wins
+    if (!month || seen.has(month)) continue;
+    seen.add(month);
+    out.push({ month, amount: parsePos(e.amount) });
+  }
+  return out;
+}
+
+/**
  * A repayment with no `freq` came from the early shape, where it followed the
  * expense exactly. Spelling that out — freq, first and last taken from the item —
  * reproduces the old behaviour precisely. A repayment that already has its own
@@ -101,7 +121,8 @@ function normReimb(raw: Record<string, unknown>, item: Item): Reimb | null {
   const legacy = raw.freq === undefined;
   const amount = parsePos(raw.amount);
   const extras = normExtras(raw.extras);
-  if (amount <= 0 && extras.length === 0) return null;
+  const overrides = normOverrides(raw.overrides);
+  if (amount <= 0 && extras.length === 0 && overrides.length === 0) return null;
 
   const freq = (raw.freq as string) in FREQ ? (raw.freq as Freq) : item.freq;
   return {
@@ -113,6 +134,9 @@ function normReimb(raw: Record<string, unknown>, item: Item): Reimb | null {
     first: legacy ? item.first : normYM(raw.first),
     last: legacy ? item.last : normYM(raw.last),
     extras,
+    // absent in every backup written before this existed, and absent means
+    // "every month went as agreed"
+    overrides,
   };
 }
 

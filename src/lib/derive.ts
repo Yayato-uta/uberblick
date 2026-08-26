@@ -2,7 +2,15 @@ import type { Asset, Data, Goal, Item, Pot, Purchase, ReimbExtra } from "../type
 import { FREQ } from "./constants";
 import { avgOf, forecast, sumOf, type MonthRow, type Spend } from "./forecast";
 import { countOccurrences, fromYM, nowIdx, occursIn, shortLabel } from "./month";
-import { reimbBetween, reimbEnd, reimbInMonth, reimbSchedule, type ReimbSchedule } from "./reimb";
+import {
+  overrideFor,
+  reimbBetween,
+  reimbEnd,
+  reimbInMonth,
+  reimbSchedule,
+  scheduledInMonth,
+  type ReimbSchedule,
+} from "./reimb";
 import { potMonth, purchasesIn, type PotMonth } from "./pots";
 
 /* Everything the views read is computed here, in one pass, from the persisted
@@ -24,6 +32,14 @@ export interface PersonItem extends Item {
   aloneOngoing: boolean;
   /** lump sums still ahead */
   lumps: ReimbExtra[];
+  /** months that didn't go as agreed, from this month on */
+  changed: ReimbExtra[];
+  /** what the agreement calls for this month */
+  dueThisMonth: number;
+  /** what is actually expected this month, once any ruling is applied */
+  expectedThisMonth: number;
+  /** this month has been overridden */
+  saidThisMonth: number | null;
 }
 
 export interface Person {
@@ -63,6 +79,12 @@ export interface EndingRow extends Item {
   net: number;
   /** somebody is still repaying it right up to the final payment */
   stillCovered: boolean;
+  /** every payment left from now to the end, before anyone pays you back */
+  remaining: number;
+  /** the same, net of what comes back — what it will really cost you to finish */
+  remainingNet: number;
+  /** how many payments that is */
+  paymentsLeft: number;
 }
 
 /** An item whose repayment stops before the expense does — your cost goes UP. */
@@ -156,6 +178,9 @@ export interface Derived {
 
   ending: EndingRow[];
   freedTotal: number;
+  /** everything still owed on the lines that have an end date */
+  endingRemaining: number;
+  endingRemainingNet: number;
   costRises: CostRiseRow[];
 
   /** budget envelopes, as they stand in `potMonthIdx` */
@@ -278,6 +303,15 @@ export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start
         const i = fromYM(e.month);
         return i !== null && i >= start;
       }),
+      changed: sched.overrides
+        .filter((e) => {
+          const i = fromYM(e.month);
+          return i !== null && i >= start;
+        })
+        .sort((a, b) => (a.month < b.month ? -1 : 1)),
+      dueThisMonth: scheduledInMonth(it, start),
+      expectedThisMonth: reimbInMonth(it, start),
+      saidThisMonth: overrideFor(it, start),
     });
   }
   const people = [...map.values()].sort((a, b) => b.monthly - a.monthly);
@@ -371,6 +405,20 @@ export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start
       const rEnd = reimbEnd(it);
       const stillCovered = !!sched && (rEnd === null || rEnd >= lastIdx);
       const back = stillCovered ? sched!.amount * (FREQ[sched!.freq].per_year / 12) : 0;
+      /* What is actually left on it: every occurrence from this month to the
+         last one. Netting off the repayments runs to whichever of the two
+         finishes later, since a repayment can outlive the expense. */
+      let remaining = 0;
+      let paymentsLeft = 0;
+      for (let i = start; i <= lastIdx; i++) {
+        if (occursIn(it, i)) {
+          remaining += it.amount;
+          paymentsLeft++;
+        }
+      }
+      const until = Math.max(lastIdx, rEnd ?? lastIdx);
+      const remainingNet = Math.max(0, remaining - reimbBetween(it, start, until));
+
       return [
         {
           ...it,
@@ -379,12 +427,17 @@ export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start
           perMonth,
           net: perMonth - back,
           stillCovered,
+          remaining,
+          remainingNet,
+          paymentsLeft,
         },
       ];
     })
     .sort((a, b) => a.lastIdx - b.lastIdx);
 
   const freedTotal = ending.reduce((s, i) => s + Math.max(0, i.net), 0);
+  const endingRemaining = ending.reduce((s, i) => s + i.remaining, 0);
+  const endingRemainingNet = ending.reduce((s, i) => s + i.remainingNet, 0);
 
   /* ── repayments that stop before the expense does ──
      The unpleasant surprise: the direct debit carries on, the money coming
@@ -464,6 +517,8 @@ export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start
     netWorthEnd,
     ending,
     freedTotal,
+    endingRemaining,
+    endingRemainingNet,
     costRises,
     potRows,
     potMonthIdx,

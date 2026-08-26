@@ -151,6 +151,27 @@ export default function App() {
       items: p.items.map((i) => (i.fund === id ? stripKey(i, "fund") : i)),
     }));
 
+  /**
+   * Record what a repayment actually did in one month — nothing, or a
+   * different amount — or clear the ruling and go back to the agreement.
+   */
+  const setReimbMonth = (itemId: string, month: string, amount: number | null) =>
+    update((prev) => ({
+      ...prev,
+      sample: false,
+      items: prev.items.map((it) => {
+        if (it.id !== itemId || !it.reimb) return it;
+        const rest = it.reimb.overrides.filter((o) => o.month !== month);
+        return {
+          ...it,
+          reimb: {
+            ...it.reimb,
+            overrides: amount === null ? rest : [...rest, { month, amount }],
+          },
+        };
+      }),
+    }));
+
   /* ── budget pots ── */
 
   const addPot = (p: Omit<Pot, "id">) =>
@@ -380,7 +401,7 @@ export default function App() {
             onDelete={removeItem}
           />
         )}
-        {tab === "people" && <People d={d} />}
+        {tab === "people" && <People d={d} onSetMonth={setReimbMonth} />}
         {tab === "assets" && (
           <Assets
             d={d}

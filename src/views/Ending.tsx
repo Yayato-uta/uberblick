@@ -42,6 +42,22 @@ export function Ending({ d }: { d: Derived }) {
               <div className="mt-0.5 font-mono text-xs text-soft">
                 final payment {longLabel(it.lastIdx)} · {eur(it.perMonth)}/mo out
               </div>
+              <div className="mt-1 font-mono text-xs">
+                <span className="text-soft">still to pay </span>
+                <span className="text-ink">{eur(it.remaining)}</span>
+                <span className="text-soft">
+                  {" "}
+                  over {it.paymentsLeft} payment{it.paymentsLeft === 1 ? "" : "s"}
+                </span>
+                {it.remainingNet < it.remaining - 0.5 && (
+                  <span className="text-ochre">
+                    {" · "}
+                    {it.remainingNet < 0.5
+                      ? "all of it comes back"
+                      : `${eur(it.remainingNet)} of it yours`}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="text-right">
@@ -61,12 +77,33 @@ export function Ending({ d }: { d: Derived }) {
       </div>
 
       {d.ending.length > 0 && (
-        <div className="mt-4 flex flex-wrap justify-between gap-4 border-2 border-ink bg-card p-4">
-          <div>
-            <Label>Once everything above is paid off</Label>
-            <div className="text-sm text-soft">Money genuinely back in your pocket each month.</div>
+        <div className="mt-4 border-2 border-ink bg-card p-4">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <Label>Left to pay on all of them</Label>
+              <div className="text-sm text-soft">
+                Every payment still to come before these lines run out.
+                {d.endingRemainingNet < d.endingRemaining - 0.5 && (
+                  <>
+                    {" "}
+                    <span className="font-mono text-ochre">{eur(d.endingRemainingNet)}</span> of it
+                    is genuinely yours — the rest comes back.
+                  </>
+                )}
+              </div>
+            </div>
+            <Figure value={eur(d.endingRemaining)} tone="red" />
           </div>
-          <Figure value={`+${eur(d.freedTotal)}`} tone="green" />
+
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-4 border-t border-dashed border-rule pt-4">
+            <div>
+              <Label>Once everything above is paid off</Label>
+              <div className="text-sm text-soft">
+                Money genuinely back in your pocket each month.
+              </div>
+            </div>
+            <Figure value={`+${eur(d.freedTotal)}`} tone="green" />
+          </div>
         </div>
       )}
     </div>

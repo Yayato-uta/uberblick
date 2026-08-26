@@ -18,7 +18,14 @@ function fill(o: Omit<Item, "reimb"> & { reimb?: LooseReimb }): Item {
   if (!reimb) return rest;
   return {
     ...rest,
-    reimb: { freq: rest.freq, first: rest.first, last: rest.last, extras: [], ...reimb },
+    reimb: {
+      freq: rest.freq,
+      first: rest.first,
+      last: rest.last,
+      extras: [],
+      overrides: [],
+      ...reimb,
+    },
   };
 }
 
@@ -727,6 +734,146 @@ describe("a budget pot in the plan", () => {
     expect(d.potRows).toEqual([]);
     expect(d.months.every((m) => m.potAllocated === 0)).toBe(true);
     expect(d.months[0].expense).toBe(0);
+  });
+});
+
+describe("what is still left to pay on a line that ends", () => {
+  it("adds up every payment from now to the last one", () => {
+    const d = derive(
+      plan({
+        horizon: 12,
+        items: [
+          item({
+            id: "wm",
+            name: "Waschmaschine",
+            kind: "expense",
+            amount: 57.5,
+            first: toYM(START - 6),
+            last: toYM(START + 5),
+          }),
+        ],
+      }),
+      START,
+    );
+    // six payments left, this month included — not the twelve of the contract
+    expect(d.ending[0].paymentsLeft).toBe(6);
+    expect(d.ending[0].remaining).toBeCloseTo(345, 6);
+    expect(d.ending[0].remainingNet).toBeCloseTo(345, 6);
+    expect(d.endingRemaining).toBeCloseTo(345, 6);
+  });
+
+  it("counts only what is genuinely yours once somebody repays it", () => {
+    const d = derive(
+      plan({
+        horizon: 12,
+        items: [
+          item({
+            id: "loan",
+            name: "Shared loan",
+            kind: "expense",
+            amount: 100,
+            first: toYM(START),
+            last: toYM(START + 5),
+            reimb: { who: "Sara", amount: 60 },
+          }),
+        ],
+      }),
+      START,
+    );
+    expect(d.ending[0].remaining).toBe(600);
+    expect(d.ending[0].remainingNet).toBe(240);
+    expect(d.endingRemainingNet).toBe(240);
+  });
+
+  it("counts a skipped month as money you carry yourself", () => {
+    const d = derive(
+      plan({
+        horizon: 12,
+        items: [
+          item({
+            id: "loan",
+            name: "Shared loan",
+            kind: "expense",
+            amount: 100,
+            first: toYM(START),
+            last: toYM(START + 5),
+            reimb: { who: "Sara", amount: 100, overrides: [{ month: toYM(START + 1), amount: 0 }] },
+          }),
+        ],
+      }),
+      START,
+    );
+    // she covers five of the six, so one payment lands on you
+    expect(d.ending[0].remaining).toBe(600);
+    expect(d.ending[0].remainingNet).toBe(100);
+  });
+
+  it("counts a quarterly line by occurrence, not by month", () => {
+    const d = derive(
+      plan({
+        horizon: 12,
+        items: [
+          item({
+            id: "q",
+            name: "Strom",
+            kind: "expense",
+            amount: 200,
+            freq: "quarterly",
+            first: toYM(START),
+            last: toYM(START + 11),
+          }),
+        ],
+      }),
+      START,
+    );
+    expect(d.ending[0].paymentsLeft).toBe(4);
+    expect(d.ending[0].remaining).toBe(800);
+  });
+});
+
+describe("recording a month a repayment went differently", () => {
+  const line = item({
+    id: "phone",
+    name: "Sara's phone",
+    kind: "expense",
+    amount: 32,
+    first: toYM(START - 3),
+    last: toYM(START + 20),
+    reimb: { who: "Sara", amount: 20 },
+  });
+
+  it("reports what this month is due when nothing has been said", () => {
+    const d = derive(plan({ horizon: 12, items: [line] }), START);
+    const row = d.people[0].items[0];
+    expect(row.dueThisMonth).toBe(20);
+    expect(row.expectedThisMonth).toBe(20);
+    expect(row.saidThisMonth).toBeNull();
+  });
+
+  it("reports nothing expected once the month is marked unpaid", () => {
+    const skipped = item({
+      ...line,
+      reimb: { who: "Sara", amount: 20, overrides: [{ month: toYM(START), amount: 0 }] },
+    });
+    const d = derive(plan({ horizon: 12, items: [skipped] }), START);
+    const row = d.people[0].items[0];
+    expect(row.dueThisMonth).toBe(20);
+    expect(row.expectedThisMonth).toBe(0);
+    expect(row.saidThisMonth).toBe(0);
+    expect(row.changed).toHaveLength(1);
+    // and the month's forecast stops counting on it
+    expect(d.months[0].reimb).toBe(0);
+    expect(d.months[1].reimb).toBe(20);
+  });
+
+  it("lowers the average across the horizon rather than the per-payment figure", () => {
+    const less = item({
+      ...line,
+      reimb: { who: "Sara", amount: 20, overrides: [{ month: toYM(START), amount: 5 }] },
+    });
+    const d = derive(plan({ horizon: 12, items: [less] }), START);
+    expect(d.people[0].items[0].sched.amount).toBe(20);
+    expect(d.people[0].monthly).toBeCloseTo((11 * 20 + 5) / 12, 6);
   });
 });
 

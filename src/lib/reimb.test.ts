@@ -19,7 +19,7 @@ const base: Item = {
 describe("a repayment that leaves its dates blank", () => {
   const it0: Item = {
     ...base,
-    reimb: { who: "Sister", amount: 100, freq: "monthly", first: "", last: "", extras: [] },
+    reimb: { who: "Sister", amount: 100, freq: "monthly", first: "", last: "", extras: [], overrides: [] },
   };
 
   it("falls back to the expense's own dates", () => {
@@ -53,6 +53,7 @@ describe("a one-off repaid monthly over a year", () => {
       first: "2026-04",
       last: "2027-03",
       extras: [],
+      overrides: [],
     },
   };
 
@@ -86,6 +87,7 @@ describe("lump sums on top", () => {
         { month: "2026-03", amount: 400 },
         { month: "2026-09", amount: 250 },
       ],
+      overrides: [],
     },
   };
 
@@ -117,7 +119,7 @@ describe("a repayment on a different cycle from the expense", () => {
   const it0: Item = {
     ...base,
     last: "",
-    reimb: { who: "Housemate", amount: 300, freq: "quarterly", first: "2026-02", last: "", extras: [] },
+    reimb: { who: "Housemate", amount: 300, freq: "quarterly", first: "2026-02", last: "", extras: [], overrides: [] },
   };
 
   it("recurs on its own anchor", () => {
@@ -136,3 +138,111 @@ describe("an item with nobody paying it back", () => {
     expect(reimbEnd(base)).toBeNull();
   });
 });
+
+describe("months that don't go as agreed", () => {
+  /* Sara pays 20 a month. The four things that actually happen: she skips a
+     month, she pays less, she pauses for a while, and she drops a lump sum. */
+  const base20: Item = {
+    ...base,
+    last: "",
+    reimb: {
+      who: "Sara",
+      amount: 20,
+      freq: "monthly",
+      first: "2026-01",
+      last: "",
+      extras: [],
+      overrides: [],
+    },
+  };
+
+  it("records a month she paid nothing", () => {
+    const it0: Item = {
+      ...base20,
+      reimb: { ...base20.reimb!, overrides: [{ month: "2026-03", amount: 0 }] },
+    };
+    expect(reimbInMonth(it0, M("2026-02"))).toBe(20);
+    expect(reimbInMonth(it0, M("2026-03"))).toBe(0);
+    expect(reimbInMonth(it0, M("2026-04"))).toBe(20);
+  });
+
+  it("records a month she paid less", () => {
+    const it0: Item = {
+      ...base20,
+      reimb: { ...base20.reimb!, overrides: [{ month: "2026-03", amount: 5 }] },
+    };
+    expect(reimbInMonth(it0, M("2026-03"))).toBe(5);
+  });
+
+  it("records a pause as a run of months", () => {
+    const it0: Item = {
+      ...base20,
+      reimb: {
+        ...base20.reimb!,
+        overrides: [
+          { month: "2026-03", amount: 0 },
+          { month: "2026-04", amount: 0 },
+          { month: "2026-05", amount: 0 },
+        ],
+      },
+    };
+    expect(reimbBetween(it0, M("2026-01"), M("2026-06"))).toBe(20 * 3);
+    expect(reimbInMonth(it0, M("2026-06"))).toBe(20);
+  });
+
+  it("keeps a lump sum on top of an overridden month", () => {
+    const it0: Item = {
+      ...base20,
+      reimb: {
+        ...base20.reimb!,
+        extras: [{ month: "2026-03", amount: 200 }],
+        overrides: [{ month: "2026-03", amount: 0 }],
+      },
+    };
+    // she paid no instalment that month but did drop the lump sum
+    expect(reimbInMonth(it0, M("2026-03"))).toBe(200);
+  });
+
+  it("can pay in a month the schedule never asked for", () => {
+    const quarterly: Item = {
+      ...base,
+      last: "",
+      reimb: {
+        who: "Sara",
+        amount: 60,
+        freq: "quarterly",
+        first: "2026-01",
+        last: "",
+        extras: [],
+        overrides: [{ month: "2026-02", amount: 20 }],
+      },
+    };
+    expect(quarterly.reimb!.freq).toBe("quarterly");
+    expect(reimbInMonth(quarterly, M("2026-02"))).toBe(20);
+    expect(reimbInMonth(quarterly, M("2026-04"))).toBe(60);
+  });
+
+  it("lets a payment after the agreed end push the end out, but not a skip", () => {
+    const ended: Item = {
+      ...base,
+      last: "",
+      reimb: {
+        who: "Sara",
+        amount: 20,
+        freq: "monthly",
+        first: "2026-01",
+        last: "2026-06",
+        extras: [],
+        overrides: [{ month: "2026-09", amount: 40 }],
+      },
+    };
+    expect(reimbEnd(ended)).toBe(M("2026-09"));
+
+    const skipped: Item = {
+      ...ended,
+      reimb: { ...ended.reimb!, overrides: [{ month: "2026-09", amount: 0 }] },
+    };
+    expect(reimbEnd(skipped)).toBe(M("2026-06"));
+  });
+});
+
