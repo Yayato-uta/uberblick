@@ -6,7 +6,7 @@ import {
   TrendingUp,
   type LucideIcon,
 } from "lucide-react";
-import type { AssetKind, Data, Freq, Item, Kind, Pot, Purchase } from "../types";
+import type { AssetKind, Data, Freq, Item, Kind, Pot, PotKind, Purchase } from "../types";
 import { nowIdx, toYM } from "./month";
 import { uid } from "./format";
 import { LIGHT, type Palette } from "./palette";
@@ -23,6 +23,17 @@ export const FREQ: Record<Freq, { label: string; per_year: number }> = {
   semiannual: { label: "Every 6 months", per_year: 2 },
   yearly: { label: "Once a year", per_year: 1 },
   oneoff: { label: "One time only", per_year: 0 },
+};
+
+/* A pot is an envelope inside your money: funded monthly from the account,
+   carrying whatever it doesn't spend into the next month. */
+export const POT_KINDS: Record<PotKind, { label: string; note: string; tone: keyof Palette }> = {
+  spending: {
+    label: "Spending pot",
+    note: "refills each month, meant to be spent",
+    tone: "ochre",
+  },
+  saving: { label: "Saving pot", note: "builds up toward something", tone: "blue" },
 };
 
 export const CATEGORIES = [
@@ -124,7 +135,15 @@ export function samplePots(): { pots: Pot[]; purchases: Purchase[] } {
   const day = (idx: number, d: number) => `${toYM(idx)}-${String(d).padStart(2, "0")}`;
   return {
     pots: [
-      { id: potId, name: "Groceries", monthly: 400, from: toYM(T - 1), last: "", opening: 0 },
+      {
+        id: potId,
+        name: "Groceries",
+        kind: "spending",
+        monthly: 400,
+        balance: 0,
+        first: toYM(T - 1),
+        last: "",
+      },
     ],
     purchases: [
       { id: uid(), potId, date: day(T - 1, 4), note: "Weekly shop", amount: 96.4 },

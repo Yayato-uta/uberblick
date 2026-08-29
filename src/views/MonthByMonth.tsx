@@ -14,7 +14,7 @@ import { FREQ } from "../lib/constants";
 import { eur } from "../lib/format";
 import { fromYM, fullLabel, occursIn } from "../lib/month";
 import { reimbInMonth, reimbSchedule } from "../lib/reimb";
-import { allocatedIn } from "../lib/pots";
+import { allocatedIn, paidFrom } from "../lib/pots";
 import { BORDER_T, Empty, Stat, TEXT, cx, type Tone } from "../components/ui";
 
 export function MonthByMonth({
@@ -28,6 +28,11 @@ export function MonthByMonth({
 }) {
   const fundName = (id: string | undefined) =>
     id ? d.assets.find((a) => a.id === id)?.name : undefined;
+  /** a source id may name a pot or a fund */
+  const sourceName = (id: string | undefined) =>
+    id
+      ? (d.potRows.find((p) => p.id === id)?.name ?? d.assets.find((a) => a.id === id)?.name)
+      : undefined;
   const idx = Math.min(Math.max(0, k), d.months.length - 1);
   const M = d.months[idx];
   const strip = useRef<HTMLDivElement>(null);
@@ -37,17 +42,22 @@ export function MonthByMonth({
     el?.scrollIntoView({ block: "nearest", inline: "center" });
   }, [idx]);
 
-  const exp = M.hits.filter((i) => i.kind === "expense");
+  const exp = M.hits.filter((i) => i.kind === "expense" && !paidFrom(i));
+  const fromPots = M.hits.filter(
+    (i) => i.kind === "expense" && paidFrom(i) && occursIn(i, M.idx),
+  );
   const every = exp.filter((i) => i.freq === "monthly");
   const periodic = exp.filter((i) => ["quarterly", "semiannual", "yearly"].includes(i.freq));
   const once = exp.filter((i) => i.freq === "oneoff");
   const income = M.hits.filter((i) => i.kind === "income");
   const saving = M.hits.filter((i) => i.kind === "saving");
 
-  const yours = M.expense - M.reimb;
-  /* Repayments run on their own clock, so a month can take back more than it
-     paid out — the share is capped for the bar, and read differently below. */
-  const share = M.expense > 0 ? (M.reimb / M.expense) * 100 : 0;
+  /* What actually leaves the account: the bills plus whatever is moved into
+     pots. An expense paid from a pot is deliberately absent — it was funded on
+     the way in, and counting it here is the double-count the brief warns of. */
+  const outflow = M.expense + M.potFund;
+  const yours = outflow - M.reimb;
+  const share = outflow > 0 ? (M.reimb / outflow) * 100 : 0;
   const barShare = Math.min(100, Math.max(0, share));
   const overCovered = yours < -0.5;
   const irregularYours = [...periodic, ...once].reduce(
@@ -98,9 +108,13 @@ export function MonthByMonth({
       <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat
           label="Leaves your account"
-          value={eur(M.expense)}
+          value={eur(outflow)}
           tone="soft"
-          note="Every expense that hits this month, before anyone pays you back."
+          note={
+            M.potFund > 0.5
+              ? `Bills plus ${eur(M.potFund)} moved into pots.`
+              : "Every expense that hits this month, before anyone pays you back."
+          }
         />
         <Stat
           label="Carried for other people"
@@ -131,7 +145,7 @@ export function MonthByMonth({
       </div>
 
       {/* whose money is it */}
-      {M.expense > 0 && (
+      {outflow > 0 && (
         <div className="mb-6">
           <div className="flex h-5 w-full border border-rule">
             <div className="bg-red opacity-75" style={{ width: `${100 - barShare}%` }} />
@@ -203,14 +217,14 @@ export function MonthByMonth({
         </div>
       )}
 
-      {M.potAllocated > 0 && (
+      {M.potFund > 0 && (
         <div className={cx("u-card mb-4 border-t-4", BORDER_T.ochre)}>
           <div className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2">
             <ShoppingBasket size={14} className={TEXT.ochre} aria-hidden />
             <span className={cx("font-mono text-xs uppercase tracking-widest", TEXT.ochre)}>
-              Into budget pots
+              Moved into pots · {d.potRows.filter((p) => allocatedIn(p, M.idx) > 0).length}
             </span>
-            <span className="text-xs text-soft">set aside for the month's spending</span>
+            <span className="text-xs text-soft">this is the outflow, not what they buy</span>
           </div>
           {d.potRows
             .filter((p) => allocatedIn(p, M.idx) > 0)
@@ -225,9 +239,40 @@ export function MonthByMonth({
                 </span>
               </div>
             ))}
-          <div className="bg-paper px-3 py-2 text-xs text-soft">
-            Counted in the {eur(M.expense)} above. What you don't spend stays in the pot for next
-            month rather than coming back to the account.
+          <div className="flex justify-between bg-paper px-3 py-2 font-mono text-sm">
+            <span className="u-label">Total into pots</span>
+            <span className={TEXT.ochre}>{eur(M.potFund, 2)}</span>
+          </div>
+        </div>
+      )}
+
+      {fromPots.length > 0 && (
+        <div className={cx("u-card mb-4 border-t-4", BORDER_T.green)}>
+          <div className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2">
+            <ShoppingBasket size={14} className={TEXT.green} aria-hidden />
+            <span className={cx("font-mono text-xs uppercase tracking-widest", TEXT.green)}>
+              Paid out of a pot · {fromPots.length}
+            </span>
+            <span className="text-xs text-soft">already funded — not in the figure above</span>
+          </div>
+          {fromPots.map((it) => (
+            <div
+              key={it.id}
+              className="flex justify-between gap-3 border-b border-rule px-3 py-2 text-sm"
+            >
+              <span>
+                {it.name}
+                <span className="font-mono text-xs text-soft">
+                  {" · "}
+                  {sourceName(it.from) ?? "a pot"}
+                </span>
+              </span>
+              <span className={cx("font-mono tabular-nums", TEXT.green)}>{eur(it.amount, 2)}</span>
+            </div>
+          ))}
+          <div className="flex justify-between bg-paper px-3 py-2 font-mono text-sm">
+            <span className="u-label">Total out of pots</span>
+            <span className={TEXT.green}>{eur(M.potSpend, 2)}</span>
           </div>
         </div>
       )}

@@ -272,7 +272,7 @@ describe("the goal spend month", () => {
   });
 });
 
-describe("the fund an expense is paid from", () => {
+describe("where an expense is paid from", () => {
   const withFund = {
     items: [
       { id: "roof", name: "Roof", kind: "expense", amount: 1500, freq: "yearly", first: "2026-08", fund: "pot" },
@@ -282,18 +282,18 @@ describe("the fund an expense is paid from", () => {
 
   it("is absent in older backups, and absent means the account", () => {
     const d = migrate({ items: [{ id: "a", name: "Rent", kind: "expense", amount: 900, freq: "monthly", first: "2026-08" }] })!;
-    expect(d.items[0].fund).toBeUndefined();
+    expect(d.items[0].from).toBeUndefined();
   });
 
   it("survives a round trip", () => {
     const d = migrate(withFund)!;
-    expect(d.items[0].fund).toBe("pot");
-    expect(migrate(JSON.parse(JSON.stringify(d)))!.items[0].fund).toBe("pot");
+    expect(d.items[0].from).toBe("pot");
+    expect(migrate(JSON.parse(JSON.stringify(d)))!.items[0].from).toBe("pot");
   });
 
-  it("un-sets a fund pointing at an asset that no longer exists", () => {
+  it("un-sets a source pointing at something that no longer exists", () => {
     const d = migrate({ ...withFund, assets: [] })!;
-    expect(d.items[0].fund).toBeUndefined();
+    expect(d.items[0].from).toBeUndefined();
   });
 
   it("is only ever set on an expense", () => {
@@ -301,7 +301,7 @@ describe("the fund an expense is paid from", () => {
       items: [{ id: "s", name: "Sparen", kind: "saving", amount: 100, freq: "monthly", first: "2026-08", fund: "pot" }],
       assets: withFund.assets,
     })!;
-    expect(d.items[0].fund).toBeUndefined();
+    expect(d.items[0].from).toBeUndefined();
   });
 });
 
@@ -321,10 +321,11 @@ describe("budget pots", () => {
     expect(d.pots[0]).toEqual({
       id: "food",
       name: "Food",
+      kind: "spending",
       monthly: 300,
-      from: "2026-08",
+      balance: 12.5,
+      first: "2026-08",
       last: "",
-      opening: 12.5,
     });
     expect(d.purchases[0]).toMatchObject({ date: "2026-08-03", note: "Billa", amount: 47.2 });
   });
@@ -332,15 +333,15 @@ describe("budget pots", () => {
   it("lets a pot be in the red, since overspending puts it there", () => {
     const d = migrate({
       items: [],
-      pots: [{ id: "p", name: "Food", monthly: 100, from: "2026-08", opening: -40 }],
+      pots: [{ id: "p", name: "Food", monthly: 100, first: "2026-08", balance: -40 }],
     })!;
-    expect(d.pots[0].opening).toBe(-40);
+    expect(d.pots[0].balance).toBe(-40);
   });
 
   it("keeps a purchase amount positive, as every amount in the app is", () => {
     const d = migrate({
       items: [],
-      pots: [{ id: "p", name: "Food", monthly: 100, from: "2026-08" }],
+      pots: [{ id: "p", name: "Food", monthly: 100, first: "2026-08" }],
       purchases: [{ id: "a", potId: "p", date: "2026-08-01", amount: -20 }],
     })!;
     // there is no refund concept, so a signed figure is read as its size
@@ -350,7 +351,7 @@ describe("budget pots", () => {
   it("drops a purchase with no usable date and one charged to a pot that's gone", () => {
     const d = migrate({
       items: [],
-      pots: [{ id: "food", name: "Food", monthly: 300, from: "2026-08" }],
+      pots: [{ id: "food", name: "Food", monthly: 300, first: "2026-08" }],
       purchases: [
         { id: "ok", potId: "food", date: "2026-08-03", amount: 10 },
         { id: "nodate", potId: "food", date: "whenever", amount: 10 },
@@ -363,7 +364,7 @@ describe("budget pots", () => {
   it("round-trips its own export", () => {
     const once = migrate({
       items: [],
-      pots: [{ id: "food", name: "Food", monthly: 300, from: "2026-08", last: "", opening: 0 }],
+      pots: [{ id: "food", name: "Food", monthly: 300, first: "2026-08", last: "", balance: 0 }],
       purchases: [{ id: "p1", potId: "food", date: "2026-08-03", note: "Billa", amount: 47.2 }],
     })!;
     expect(migrate(JSON.parse(JSON.stringify(once)))).toEqual(once);
@@ -461,6 +462,80 @@ describe("months a repayment went differently", () => {
 
   it("round-trips its own export", () => {
     const once = migrate(withOverrides)!;
+    expect(migrate(JSON.parse(JSON.stringify(once)))).toEqual(once);
+  });
+});
+
+describe("pots written by an earlier build of this app", () => {
+  /* That build called the balance `opening` and the first funded month `from`,
+     and had no `kind`. All three come forward without the owner touching them. */
+  const older = {
+    items: [
+      {
+        id: "shop",
+        name: "Veg box",
+        kind: "expense",
+        amount: 60,
+        freq: "monthly",
+        first: "2026-08",
+        fund: "food",
+      },
+    ],
+    pots: [{ id: "food", name: "Food", monthly: 400, from: "2026-07", last: "", opening: 85 }],
+  };
+
+  it("reads the old field names", () => {
+    const d = migrate(older)!;
+    expect(d.pots[0]).toEqual({
+      id: "food",
+      name: "Food",
+      kind: "spending",
+      monthly: 400,
+      balance: 85,
+      first: "2026-07",
+      last: "",
+    });
+  });
+
+  it("carries the old fund link into the new source field", () => {
+    expect(migrate(older)!.items[0].from).toBe("food");
+  });
+
+  it("prefers the new names when a file carries both", () => {
+    const d = migrate({
+      items: [],
+      pots: [
+        { id: "p", name: "P", monthly: 10, from: "2026-01", first: "2026-05", opening: 1, balance: 99 },
+      ],
+    })!;
+    expect(d.pots[0].balance).toBe(99);
+    expect(d.pots[0].first).toBe("2026-05");
+  });
+
+  it("keeps a saving pot's kind", () => {
+    const d = migrate({
+      items: [],
+      pots: [{ id: "p", name: "P", kind: "saving", monthly: 10, first: "2026-01" }],
+    })!;
+    expect(d.pots[0].kind).toBe("saving");
+  });
+
+  it("puts an expense back on the account when its pot is gone", () => {
+    const d = migrate({ ...older, pots: [] })!;
+    expect(d.items[0].from).toBeUndefined();
+  });
+
+  it("treats an explicit \"account\" as the account", () => {
+    const d = migrate({
+      items: [
+        { id: "a", name: "Rent", kind: "expense", amount: 900, freq: "monthly", first: "2026-08", from: "account" },
+      ],
+    })!;
+    expect(d.items[0].from).toBeUndefined();
+  });
+
+  it("round-trips its own export", () => {
+    const once = migrate(older)!;
     expect(migrate(JSON.parse(JSON.stringify(once)))).toEqual(once);
   });
 });

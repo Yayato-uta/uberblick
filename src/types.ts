@@ -5,6 +5,7 @@
 export type Kind = "expense" | "income" | "saving";
 export type Freq = "monthly" | "quarterly" | "semiannual" | "yearly" | "oneoff";
 export type AssetKind = "savings" | "investment" | "vehicle" | "property" | "other";
+export type PotKind = "spending" | "saving";
 export type Horizon = 12 | 18 | 24;
 
 /** "YYYY-MM", or "" where an open end is allowed. */
@@ -57,11 +58,13 @@ export interface Item {
   /** expenses only — somebody sends this much back each time */
   reimb?: Reimb;
   /**
-   * Expenses only — the `Asset.id` of the fund this is paid out of, instead of
-   * the current account. The fund empties on this item's own schedule, so a
-   * one-off empties it at once and a monthly line drains it gradually.
+   * Expenses only — where the money comes from: "account" (or absent) for the
+   * current account, otherwise a `Pot.id` or an `Asset.id`.
+   *
+   * Money paid from either never touches the account twice. A pot's own monthly
+   * funding is what shows in the cash flow; an asset is simply drawn down.
    */
-  fund?: string;
+  from?: string;
 }
 
 export interface Goal {
@@ -99,24 +102,26 @@ export interface Asset {
 }
 
 /**
- * A budget envelope. You put `monthly` aside for a category, spend it down as
- * you go, and whatever is left rolls into next month — so a lean month leaves
- * you more to play with in the one after it.
+ * An envelope inside your money: funded from the account every month, keeping
+ * whatever it doesn't spend, and nameable as the source of an expense.
  *
- * A pot is a spending plan, not something you own: money in it is earmarked for
- * a category, which is why it lives apart from `Asset` and its growth rates.
+ * A pot is a spending plan, not something you own, which is why it lives apart
+ * from `Asset` and its growth rates. Two things draw one down: expenses that
+ * name it as their source, and purchases logged against it as they happen.
  */
 export interface Pot {
   id: string;
   name: string;
-  /** set aside each month */
+  /** a spending pot refills to be spent; a saving pot builds toward something */
+  kind: PotKind;
+  /** funded from the account each month */
   monthly: number;
+  /** what is in it today */
+  balance: number;
   /** first month it's funded, "YYYY-MM" */
-  from: YM;
+  first: YM;
   /** last month it's funded, "" for ongoing */
   last: YM;
-  /** what was already in it before `from` — the carry-in from life before this app */
-  opening: number;
 }
 
 /** One thing you actually bought, charged against a pot. */

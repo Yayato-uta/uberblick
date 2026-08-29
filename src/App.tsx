@@ -148,7 +148,7 @@ export default function App() {
       ...p,
       assets: p.assets.filter((a) => a.id !== id),
       // anything that was paid out of it goes back to coming out of the account
-      items: p.items.map((i) => (i.fund === id ? stripKey(i, "fund") : i)),
+      items: p.items.map((i) => (i.from === id ? stripKey(i, "from") : i)),
     }));
 
   /**
@@ -196,6 +196,8 @@ export default function App() {
           ...prev,
           sample: false,
           pots: prev.pots.filter((p) => p.id !== pot.id),
+          // expenses drawn from it go back on the account rather than vanishing
+          items: prev.items.map((i) => (i.from === pot.id ? stripKey(i, "from") : i)),
           // nothing may be left charged to a pot that no longer exists
           purchases: prev.purchases.filter((x) => x.potId !== pot.id),
         })),
@@ -394,6 +396,7 @@ export default function App() {
         {tab === "items" && (
           <Items
             items={data.items}
+            pots={data.pots}
             assets={data.assets}
             start={start}
             onAdd={() => setDraft(blankDraft())}
@@ -466,6 +469,7 @@ export default function App() {
 
       <ItemSheet
         draft={draft}
+        pots={data.pots}
         assets={data.assets}
         onSave={upsertItem}
         onClose={() => setDraft(null)}

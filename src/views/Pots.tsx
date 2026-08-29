@@ -1,6 +1,16 @@
 import { useState } from "react";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, X } from "lucide-react";
-import type { Pot, Purchase } from "../types";
+import type { Pot, PotKind, Purchase } from "../types";
 import type { Derived, PotRow } from "../lib/derive";
 import { eur, parseNum, parsePos } from "../lib/format";
 import { fullLabel, toYM } from "../lib/month";
@@ -9,16 +19,24 @@ import { Sheet } from "../components/Sheet";
 import {
   BORDER_T,
   Btn,
+  Callout,
   Empty,
   Field,
   Figure,
   IconBtn,
   Label,
   Prose,
+  Select,
+  Stat,
   TextInput,
   cx,
   type Tone,
 } from "../components/ui";
+import { POT_KINDS } from "../lib/constants";
+import { eurAxis } from "../lib/format";
+import { usePalette } from "../hooks/useTheme";
+import { useIsNarrow } from "../hooks/useMediaQuery";
+import { AlertTriangle } from "lucide-react";
 
 /** "YYYY-MM-DD" for today, in local time — not UTC, which can be yesterday. */
 function todayISO(): string {
@@ -55,14 +73,26 @@ export function Pots({
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<PotRow | null>(null);
   const thisMonth = d.potMonthIdx === d.start;
+  const P = usePalette();
+  const narrow = useIsNarrow();
+  // same six-label ceiling as the other charts
+  const tickInterval = narrow
+    ? d.horizon > 18
+      ? 3
+      : d.horizon > 12
+        ? 2
+        : 1
+    : d.horizon > 18
+      ? 1
+      : 0;
 
   return (
     <div className="mt-6">
       <Prose>
-        Set aside money for a category, then spend it down as you go. What you don't use stays
-        put, so next month you get that on top of the new allocation. Your plan assumes the full
-        amount leaves your account each month, so what's left in a pot is untouched budget — not
-        spare cash in the bank.
+        A pot is an envelope inside your money. It's funded from your account every month, keeps
+        whatever it doesn't spend, and can be named as the source of an expense over in All items.
+        The funding is what shows in your cash flow — anything paid out of a pot has already left
+        the account on the way in, so it never counts twice.
       </Prose>
 
       {/* which month the figures describe */}
@@ -94,6 +124,40 @@ export function Pots({
         </button>
       </div>
 
+      {d.potsShort.length > 0 && (
+        <div className="mb-4">
+          <Callout tone="red" dashed icon={AlertTriangle}>
+            {d.potsShort.map((p) => p.name).join(", ")}{" "}
+            {d.potsShort.length === 1 ? "runs" : "run"} dry inside the next {d.horizon} months —
+            more is drawn out than funded in. Raise the monthly funding, or move something back to
+            the account.
+          </Callout>
+        </div>
+      )}
+
+      {d.potRows.length > 0 && (
+        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <Stat
+            label="Funded each month"
+            value={eur(d.potAllocated)}
+            tone="ochre"
+            note="What leaves the account into pots."
+          />
+          <Stat
+            label="Spent from pots"
+            value={eur(d.potSpent)}
+            tone="green"
+            note="Already funded — it doesn't touch the account again."
+          />
+          <Stat
+            label="Sitting in pots today"
+            value={eur(d.potsToday)}
+            tone="ink"
+            note="Yours, but earmarked."
+          />
+        </div>
+      )}
+
       <div className="mb-4">
         <Btn tone="solid" onClick={() => setAdding(true)}>
           <Plus size={14} /> Add a pot
@@ -120,6 +184,66 @@ export function Pots({
           />
         ))}
       </div>
+
+      {d.potRows.length > 0 && (
+        <div className="u-card mt-4 p-3 sm:p-4">
+          <Label>How the pots stand over {d.horizon} months</Label>
+          <div className="mt-2 h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={d.potSeries.rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                <CartesianGrid stroke={P.rule} vertical={false} />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fontSize: 10, fontFamily: "monospace", fill: P.soft }}
+                  axisLine={{ stroke: P.rule }}
+                  tickLine={false}
+                  interval={tickInterval}
+                />
+                <YAxis
+                  tick={{ fontSize: 10, fontFamily: "monospace", fill: P.soft }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={52}
+                  tickFormatter={eurAxis}
+                />
+                <Tooltip
+                  formatter={(v: number) => eur(v)}
+                  contentStyle={{
+                    background: P.card,
+                    border: `1px solid ${P.rule}`,
+                    borderRadius: 0,
+                    fontFamily: "monospace",
+                    fontSize: 12,
+                    color: P.ink,
+                  }}
+                />
+                {/* a pot below this line is being drawn on harder than it is funded */}
+                <ReferenceLine y={0} stroke={P.ink} strokeWidth={1} />
+                {d.potRows.map((p) => (
+                  <Line
+                    key={p.id}
+                    type="monotone"
+                    dataKey={p.id}
+                    name={p.name}
+                    stroke={P[POT_KINDS[p.kind].tone]}
+                    strokeWidth={p.short ? 2.5 : 1.5}
+                    strokeDasharray={p.short ? "4 3" : undefined}
+                    dot={false}
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 font-mono text-xs text-soft">
+            {d.potRows.map((p) => (
+              <span key={p.id}>
+                <span style={{ color: P[POT_KINDS[p.kind].tone] }}>▬</span> {p.name}
+                {p.short && <span className="text-red"> · runs dry</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {d.potRows.length > 1 && (
         <div className="mt-4 flex flex-wrap items-end justify-between gap-4 border-2 border-ink bg-card p-4">
@@ -182,7 +306,7 @@ function PotCard({
   const [dating, setDating] = useState(false);
   const [open, setOpen] = useState(false);
 
-  const tone: Tone = p.over ? "red" : p.left < p.allocated * 0.2 ? "ochre" : "green";
+  const tone: Tone = p.over || p.short ? "red" : p.left < p.allocated * 0.2 ? "ochre" : "green";
 
   const add = () => {
     const value = parsePos(amount);
@@ -200,6 +324,7 @@ function PotCard({
         <div className="min-w-0">
           <h2 className="font-mono text-xl">{p.name}</h2>
           <div className="mt-0.5 font-mono text-xs text-soft">
+            {POT_KINDS[p.kind].label} ·{" "}
             {p.funded ? `${eur(p.monthly)} a month` : "not funded this month"}
           </div>
         </div>
@@ -228,6 +353,38 @@ function PotCard({
           <div className="border-t border-rule pt-0.5">− {eur(p.spent)} spent</div>
         </div>
       </div>
+
+      {p.draws.length > 0 && (
+        <div className="mt-3 border-t border-dotted border-rule pt-2">
+          <Label>Paid out of it</Label>
+          {p.draws.map((it) => (
+            <div key={it.id} className="flex justify-between gap-3 text-sm">
+              <span className="min-w-0 truncate">{it.name}</span>
+              <span className="font-mono tabular-nums text-soft">{eur(it.amount, 2)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(p.draws.length > 0 || p.short) && (
+        <div className={cx("mt-2 font-mono text-xs", p.short ? "text-red" : "text-soft")}>
+          {p.slack < -0.005 ? (
+            /* genuinely underfunded: no starting balance would save it */
+            <>
+              {eur(-p.slack)} a month short of what comes out of it — it only gets deeper.
+            </>
+          ) : p.short ? (
+            /* the funding covers it on average; the bills just land too early */
+            <>
+              The funding covers it on average, with {eur(p.slack)} a month to spare, but a bill
+              lands before enough has built up — it dips to {eur(p.low)}. Starting it with{" "}
+              {eur(-p.low)} would carry it.
+            </>
+          ) : (
+            <>{eur(p.slack)} a month of slack after what comes out of it.</>
+          )}
+        </div>
+      )}
 
       <div className="mt-2 flex h-3 w-full border border-rule" aria-hidden>
         <div
@@ -351,18 +508,20 @@ function PotSheet({
 }) {
   const blank = {
     name: "",
+    kind: "spending" as PotKind,
     monthly: "",
-    from: toYM(start),
+    first: toYM(start),
     last: "",
-    opening: "",
+    balance: "",
   };
   const seeded = pot
     ? {
         name: pot.name,
+        kind: pot.kind,
         monthly: String(pot.monthly),
-        from: pot.from,
+        first: pot.first,
         last: pot.last,
-        opening: String(pot.opening),
+        balance: String(pot.balance),
       }
     : blank;
 
@@ -385,10 +544,11 @@ function PotSheet({
     if (!nameOk || !monthlyOk) return;
     onSave({
       name: f.name.trim(),
+      kind: f.kind,
       monthly: parsePos(f.monthly),
-      from: f.from,
+      balance: parseNum(f.balance),
+      first: f.first,
       last: f.last,
-      opening: parseNum(f.opening),
     });
   };
 
@@ -438,17 +598,27 @@ function PotSheet({
           />
         </Field>
 
-        <Field label="Already in it (€)" hint="What's sitting there now, before this month's money.">
+        <Field label="In the pot today (€)" hint="What's sitting there now, before this month's money.">
           <TextInput
             inputMode="decimal"
-            value={f.opening}
-            onChange={(e) => set({ opening: e.target.value })}
+            value={f.balance}
+            onChange={(e) => set({ balance: e.target.value })}
             placeholder="0"
           />
         </Field>
 
+        <Field label="What kind" hint={POT_KINDS[f.kind].note}>
+          <Select value={f.kind} onChange={(e) => set({ kind: e.target.value as PotKind })}>
+            {(Object.keys(POT_KINDS) as PotKind[]).map((k) => (
+              <option key={k} value={k}>
+                {POT_KINDS[k].label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
         <Field label="Funded from" hint="The first month you put money in.">
-          <MonthField value={f.from} onChange={(v) => set({ from: v })} label="Funded from" />
+          <MonthField value={f.first} onChange={(v) => set({ first: v })} label="Funded from" />
         </Field>
 
         <Field label="Funded until" hint="Leave it open if it just keeps going.">

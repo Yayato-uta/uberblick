@@ -7,6 +7,7 @@ import type {
   Item,
   Kind,
   Pot,
+  PotKind,
   Purchase,
   Reimb,
   ReimbExtra,
@@ -67,9 +68,10 @@ function normItem(raw: unknown): Item | null {
     if (reimb) item.reimb = reimb;
   }
   if (kind === "expense") {
-    // absent in every older backup, and absent means "paid from the account"
-    const fund = str(raw.fund);
-    if (fund) item.fund = fund;
+    /* Absent means the account. `fund` is what an earlier build of this app
+       called the same field when it could only point at an asset. */
+    const src = str(raw.from ?? raw.fund);
+    if (src && src !== "account") item.from = src;
   }
   return item;
 }
@@ -160,14 +162,18 @@ function normGoal(raw: unknown): Goal | null {
 
 function normPot(raw: unknown): Pot | null {
   if (!isObj(raw)) return null;
+  const kind: PotKind = raw.kind === "saving" ? "saving" : "spending";
   return {
     id: str(raw.id) || uid(),
     name: str(raw.name).trim() || "Unnamed",
+    kind,
     monthly: parsePos(raw.monthly),
-    from: normYM(raw.from) || toYM(nowIdx()),
+    // a pot can legitimately be in the red, so this one keeps its sign.
+    // `opening` is what an earlier build of this app called the same thing.
+    balance: parseNum(raw.balance ?? raw.opening),
+    // and `from` is what that build called the first funded month
+    first: normYM(raw.first ?? raw.from) || toYM(nowIdx()),
     last: normYM(raw.last),
-    // a pot can legitimately be in the red, so this one keeps its sign
-    opening: parseNum(raw.opening),
   };
 }
 
@@ -261,10 +267,12 @@ export function migrate(raw: unknown): Data | null {
 
   // drop links that point at something which no longer exists
   const itemIds = new Set(items.map((i) => i.id));
-  const assetIds = new Set(assets.map((a) => a.id));
+  // an expense may be paid from either kind of container
+  const sourceIds = new Set([...assets.map((a) => a.id), ...pots.map((p) => p.id)]);
   data.goals = data.goals.map((g) => (g.itemId && !itemIds.has(g.itemId) ? omitItemId(g) : g));
   data.assets = data.assets.map((a) => (a.feed && !itemIds.has(a.feed) ? omitFeed(a) : a));
-  data.items = data.items.map((i) => (i.fund && !assetIds.has(i.fund) ? omitFund(i) : i));
+  // a source that is gone puts the expense back on the account rather than orphaning it
+  data.items = data.items.map((i) => (i.from && !sourceIds.has(i.from) ? omitFrom(i) : i));
 
   return data;
 }
@@ -279,7 +287,7 @@ function omitFeed(a: Asset): Asset {
   return rest;
 }
 
-function omitFund(i: Item): Item {
-  const { fund: _drop, ...rest } = i;
+function omitFrom(i: Item): Item {
+  const { from: _drop, ...rest } = i;
   return rest;
 }

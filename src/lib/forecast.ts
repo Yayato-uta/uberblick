@@ -1,7 +1,7 @@
 import type { Item, Pot } from "../types";
 import { occursIn, shortLabel } from "./month";
 import { reimbInMonth } from "./reimb";
-import { allocatedTotal } from "./pots";
+import { allocatedTotal, paidFrom } from "./pots";
 
 /** Money paid out of a fund rather than out of the current account. */
 export interface Spend {
@@ -44,11 +44,17 @@ export interface MonthRow {
   fromSavings: number;
   spends: Spend[];
   /**
-   * Set aside into budget pots this month. Counted inside `expense`, because
-   * money budgeted for food is money food costs you — what you don't spend
-   * stays in the pot rather than coming back to the account.
+   * Moved into budget pots this month. This is the cash outflow for a pot —
+   * what leaves the account whether or not anything is spent from it — so it
+   * sits beside `expense` rather than inside it.
    */
-  potAllocated: number;
+  potFund: number;
+  /**
+   * Expenses drawn from a pot this month. Already funded on the way in, so it
+   * must never reach the account a second time; it is here to be shown, not to
+   * be added to anything.
+   */
+  potSpend: number;
 }
 
 export interface ForecastInput {
@@ -87,6 +93,7 @@ export function forecast({
   pots = [],
 }: ForecastInput): MonthRow[] {
   const rows: MonthRow[] = [];
+  const potIds = new Set(pots.map((p) => p.id));
   const rate = (Number(odRate) || 0) / 100 / 12;
   let bal = Number(opening) || 0;
 
@@ -97,6 +104,7 @@ export function forecast({
     let saving = 0;
     let reimb = 0;
     let irregular = 0;
+    let potSpend = 0;
     const hits: Item[] = [];
     const drawn: Spend[] = [];
 
@@ -105,24 +113,28 @@ export function forecast({
       const due = occursIn(it, idx);
       if (!due && back === 0) continue;
 
-      /* An expense paid from a fund never reaches the current account, so it
-         belongs in neither `expense` nor the balance — it draws its fund down
-         instead, on its own schedule. */
-      if (it.kind === "expense" && it.fund) {
+      /* An expense paid from a pot or a fund never reaches the current account,
+         so it belongs in neither `expense` nor the balance. A pot was funded on
+         the way in; a fund is simply drawn down. */
+      const source = it.kind === "expense" ? paidFrom(it) : null;
+      if (source) {
+        hits.push(it);
         if (due) {
-          drawn.push({
-            idx,
-            id: it.id,
-            name: it.name,
-            amount: it.amount,
-            from: "fund",
-            assetId: it.fund,
-          });
+          /* A pot and an asset are both "not the account", but they are shown
+             in different places and must not be listed twice: a pot draw is
+             counted here, an asset draw goes on the spends list. */
+          if (potIds.has(source)) potSpend += it.amount;
+          else
+            drawn.push({
+              idx,
+              id: it.id,
+              name: it.name,
+              amount: it.amount,
+              from: "fund",
+              assetId: source,
+            });
         }
-        if (back > 0) {
-          hits.push(it);
-          reimb += back;
-        }
+        if (back > 0) reimb += back;
         continue;
       }
 
@@ -143,11 +155,10 @@ export function forecast({
       }
     }
 
-    // what you set aside for the month's budgets leaves the account as well
-    const potAllocated = allocatedTotal(pots, idx);
-    expense += potAllocated;
+    // funding a pot is itself an outflow, kept apart from the bills
+    const potFund = allocatedTotal(pots, idx);
 
-    let net = income + reimb - expense - saving;
+    let net = income + reimb - expense - potFund - saving;
     bal += net;
     const interest = bal < 0 ? -bal * rate : 0;
     bal -= interest;
@@ -170,17 +181,31 @@ export function forecast({
       hits,
       fromSavings: spent.reduce((t, sp) => t + sp.amount, 0),
       spends: spent,
-      potAllocated,
+      potFund,
+      potSpend,
     });
   }
 
   return rows;
 }
 
+/** The columns of a month that are plain numbers, and so can be averaged. */
+export type NumericColumn =
+  | "income"
+  | "expense"
+  | "saving"
+  | "reimb"
+  | "irregular"
+  | "interest"
+  | "net"
+  | "potFund"
+  | "potSpend"
+  | "fromSavings";
+
 /** Mean of one column across the horizon. All headline figures are means. */
 export function avgOf(
   rows: MonthRow[],
-  key: "income" | "expense" | "saving" | "reimb" | "irregular" | "interest" | "net",
+  key: NumericColumn,
 ): number {
   if (!rows.length) return 0;
   let s = 0;
@@ -190,7 +215,7 @@ export function avgOf(
 
 export function sumOf(
   rows: MonthRow[],
-  key: "income" | "expense" | "saving" | "reimb" | "irregular" | "interest" | "net",
+  key: NumericColumn,
 ): number {
   let s = 0;
   for (const r of rows) s += r[key];

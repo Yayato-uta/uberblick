@@ -1,6 +1,6 @@
 ﻿import { useState } from "react";
 import { Check, Plus, X } from "lucide-react";
-import type { Asset, Freq, Item, Kind } from "../types";
+import type { Asset, Freq, Item, Kind, Pot } from "../types";
 import { CATEGORIES, FREQ, KIND } from "../lib/constants";
 import { parsePos, uid } from "../lib/format";
 import { nowIdx, toYM } from "../lib/month";
@@ -27,8 +27,8 @@ export interface ItemDraft {
   extras: { month: string; amount: string }[];
   /** months that went differently — "" amount means they paid nothing */
   overrides: { month: string; amount: string }[];
-  /** Asset id this comes out of, or "" for the current account */
-  fund: string;
+  /** Pot or Asset id this comes out of, or "" for the current account */
+  from: string;
 }
 
 export const blankDraft = (): ItemDraft => ({
@@ -48,7 +48,7 @@ export const blankDraft = (): ItemDraft => ({
   reimbLast: "",
   extras: [],
   overrides: [],
-  fund: "",
+  from: "",
 });
 
 export const draftFromItem = (it: Item): ItemDraft => ({
@@ -71,16 +71,19 @@ export const draftFromItem = (it: Item): ItemDraft => ({
     month: e.month,
     amount: String(e.amount),
   })),
-  fund: it.fund ?? "",
+  from: it.from ?? "",
 });
 
 export function ItemSheet({
   draft,
+  pots,
   assets,
   onSave,
   onClose,
 }: {
   draft: ItemDraft | null;
+  /** the envelopes an expense can be paid out of */
+  pots: Pot[];
   /** the funds an expense can be paid out of */
   assets: Asset[];
   onSave: (item: Item) => void;
@@ -117,8 +120,9 @@ export function ItemSheet({
       first: f.first,
       last: f.last || "",
     };
-    if (f.kind === "expense" && f.fund && assets.some((a) => a.id === f.fund)) {
-      item.fund = f.fund;
+    const sources = [...pots.map((p) => p.id), ...assets.map((a) => a.id)];
+    if (f.kind === "expense" && f.from && sources.includes(f.from)) {
+      item.from = f.from;
     }
     if (f.reimbOn && f.kind === "expense") {
       const amount = parsePos(f.reimbAmount);
@@ -238,23 +242,38 @@ export function ItemSheet({
           />
         </Field>
 
-        {f.kind === "expense" && assets.length > 0 && (
+        {f.kind === "expense" && (pots.length > 0 || assets.length > 0) && (
           <Field
             label="Paid from"
             wide
             hint={
-              f.fund
-                ? "It empties that fund on the schedule above and never touches your account balance."
-                : "Point it at a fund and it comes out of there instead of your account."
+              pots.some((p) => p.id === f.from)
+                ? "It comes out of the pot, not the account — the pot's monthly funding is what shows in your cash flow."
+                : f.from
+                  ? "It draws that fund down on the schedule above and never touches your account balance."
+                  : "Point it at a pot or a fund and it comes out of there instead of your account."
             }
           >
-            <Select value={f.fund} onChange={(e) => set({ fund: e.target.value })}>
+            <Select value={f.from} onChange={(e) => set({ from: e.target.value })}>
               <option value="">My account</option>
-              {assets.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
+              {pots.length > 0 && (
+                <optgroup label="Budget pots">
+                  {pots.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {assets.length > 0 && (
+                <optgroup label="What I own">
+                  {assets.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </Select>
           </Field>
         )}

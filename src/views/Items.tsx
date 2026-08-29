@@ -1,5 +1,5 @@
 import { Pencil, Plus, Trash2 } from "lucide-react";
-import type { Asset, Item, Kind } from "../types";
+import type { Asset, Item, Kind, Pot } from "../types";
 import { FREQ, KIND } from "../lib/constants";
 import { eur } from "../lib/format";
 import { fromYM, longLabel, monthlyEquivalent } from "../lib/month";
@@ -9,6 +9,7 @@ const ORDER: Kind[] = ["income", "expense", "saving"];
 
 export function Items({
   items,
+  pots,
   assets,
   start,
   onAdd,
@@ -16,6 +17,7 @@ export function Items({
   onDelete,
 }: {
   items: Item[];
+  pots: Pot[];
   assets: Asset[];
   start: number;
   onAdd: () => void;
@@ -56,7 +58,9 @@ export function Items({
                 <Row
                   key={it.id}
                   it={it}
-                  fund={assets.find((a) => a.id === it.fund)}
+                  source={
+                    pots.find((p) => p.id === it.from) ?? assets.find((a) => a.id === it.from)
+                  }
                   start={start}
                   tone={tone}
                   onEdit={() => onEdit(it)}
@@ -73,15 +77,15 @@ export function Items({
 
 function Row({
   it,
-  fund,
+  source,
   start,
   tone,
   onEdit,
   onDelete,
 }: {
   it: Item;
-  /** the fund it comes out of, when it isn't the account */
-  fund: Asset | undefined;
+  /** the pot or fund it comes out of, when it isn't the account */
+  source: Pot | Asset | undefined;
   start: number;
   tone: "red" | "green" | "blue";
   onEdit: () => void;
@@ -108,16 +112,16 @@ function Row({
             </>
           )}
         </div>
-        {(it.reimb || fund) && (
+        {(it.reimb || source) && (
           <div className="mt-1 flex flex-wrap gap-1">
             {it.reimb && (
               <span className="border border-ochre px-1.5 py-0.5 font-mono text-2xs text-ochre">
                 {it.reimb.who} sends back {eur(it.reimb.amount)}
               </span>
             )}
-            {fund && (
+            {source && (
               <span className="border border-green px-1.5 py-0.5 font-mono text-2xs text-green">
-                paid from {fund.name}
+                paid from {source.name}
               </span>
             )}
           </div>

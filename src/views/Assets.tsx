@@ -169,7 +169,7 @@ export function Assets({
               const feed = a.feed ? items.find((it) => it.id === a.feed) : undefined;
               const end = d.assetSeries.ending[i] ?? 0;
               // what empties it: expenses pointed at it, plus any goal spend
-              const draws = items.filter((it) => it.fund === a.id);
+              const draws = items.filter((it) => it.from === a.id);
               const goalDraws = d.spends.filter((sp) => sp.from === "goal" && sp.assetId === a.id);
               const takenOut = d.assetSeries.withdrawn[i] ?? 0;
               return (

@@ -8,10 +8,11 @@ const M = (ym: string) => fromYM(ym)!;
 const food: Pot = {
   id: "food",
   name: "Food",
+  kind: "spending",
   monthly: 300,
-  from: "2026-08",
+  balance: 0,
+  first: "2026-08",
   last: "",
-  opening: 0,
 };
 
 const buy = (date: string, amount: number, note = ""): Purchase => ({
@@ -87,7 +88,7 @@ describe("a month where you overspend", () => {
 
 describe("what was already in the pot", () => {
   it("is there from the first month", () => {
-    const seeded: Pot = { ...food, opening: 75 };
+    const seeded: Pot = { ...food, balance: 75 };
     const aug = potMonth(seeded, [], M("2026-08"));
     expect(aug.carriedIn).toBe(75);
     expect(aug.available).toBe(375);

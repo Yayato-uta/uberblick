@@ -589,7 +589,7 @@ describe("an expense paid out of a fund", () => {
     freq: "quarterly",
     first: toYM(START),
     last: toYM(START + 9),
-    fund: "pot",
+    from: "pot",
   });
 
   const d = derive(plan({ horizon: 12, items: [roof], assets: [pot] }), START);
@@ -628,8 +628,14 @@ describe("an expense paid out of a fund", () => {
     expect(d.freedTotal).toBe(0);
   });
 
-  it("keeps it out of the expense groups, which are account-facing", () => {
-    expect(d.months[0].hits).toHaveLength(0);
+  it("is listed in the month so it can be shown, but never as account outflow", () => {
+    // it stays in `hits` for the month's own section to find…
+    expect(d.months[0].hits.map((i) => i.id)).toEqual(["roof"]);
+    // …while contributing nothing to what leaves the account
+    expect(d.months[0].expense).toBe(0);
+    // and it is a fund draw, not a pot draw — the two are listed separately
+    expect(d.months[0].potSpend).toBe(0);
+    expect(d.months[0].fromSavings).toBe(1500);
   });
 });
 
@@ -657,16 +663,18 @@ describe("a budget pot in the plan", () => {
   const food = {
     id: "food",
     name: "Food",
+    kind: "spending" as const,
     monthly: 300,
-    from: toYM(START),
+    balance: 0,
+    first: toYM(START),
     last: "",
-    opening: 0,
   };
 
   it("takes its allocation out of the account every month", () => {
     const d = derive(plan({ horizon: 12, opening: 0, pots: [food] }), START);
-    expect(d.months[0].potAllocated).toBe(300);
-    expect(d.months[0].expense).toBe(300);
+    expect(d.months[0].potFund).toBe(300);
+    // funding is its own column now, not folded into the bills
+    expect(d.months[0].expense).toBe(0);
     expect(d.months[0].net).toBe(-300);
     // and it keeps coming out, spent or not
     expect(d.months[11].balance).toBe(-3600);
@@ -684,7 +692,7 @@ describe("a budget pot in the plan", () => {
     });
     const d = derive(spent, START);
     // the purchase shows against the pot, never against the balance
-    expect(d.months[0].expense).toBe(300);
+    expect(d.months[0].potFund).toBe(300);
     expect(d.months[0].balance).toBe(-300);
     expect(d.potRows[0].spent).toBe(120);
     expect(d.potRows[0].left).toBe(180);
@@ -732,7 +740,7 @@ describe("a budget pot in the plan", () => {
   it("changes nothing for a plan with no pots", () => {
     const d = derive(plan({ horizon: 12, opening: 0 }), START);
     expect(d.potRows).toEqual([]);
-    expect(d.months.every((m) => m.potAllocated === 0)).toBe(true);
+    expect(d.months.every((m) => m.potFund === 0)).toBe(true);
     expect(d.months[0].expense).toBe(0);
   });
 });
@@ -874,6 +882,174 @@ describe("recording a month a repayment went differently", () => {
     const d = derive(plan({ horizon: 12, items: [less] }), START);
     expect(d.people[0].items[0].sched.amount).toBe(20);
     expect(d.people[0].monthly).toBeCloseTo((11 * 20 + 5) / 12, 6);
+  });
+});
+
+describe("a pot as the source of an expense", () => {
+  /* The brief's worked example: a pot funded 100 a month against 120 of
+     expenses every six weeks — near enough every other month — stays positive
+     because the balance carries forward. */
+  const pot = {
+    id: "groom",
+    name: "Grooming",
+    kind: "spending" as const,
+    monthly: 100,
+    balance: 0,
+    first: toYM(START),
+    last: "",
+  };
+  const appt = item({
+    id: "appt",
+    name: "Appointment",
+    kind: "expense",
+    amount: 120,
+    freq: "quarterly",
+    first: toYM(START),
+    last: "",
+    from: "groom",
+  });
+
+  const d = derive(plan({ horizon: 12, opening: 0, pots: [pot], items: [appt] }), START);
+
+  it("charges the account the funding and nothing else", () => {
+    // 100 a month leaves the account, every month, spent or not
+    expect(d.months.every((m) => m.potFund === 100)).toBe(true);
+    expect(d.months.every((m) => m.expense === 0)).toBe(true);
+    expect(d.months[11].balance).toBe(-1200);
+  });
+
+  it("shows the appointment as drawn from the pot, in the months it falls", () => {
+    expect(d.months[0].potSpend).toBe(120);
+    expect(d.months[1].potSpend).toBe(0);
+    expect(d.months[3].potSpend).toBe(120);
+  });
+
+  it("carries the balance forward rather than resetting it", () => {
+    // month 0: +100 −120 = −20; month 1: +100 = 80; month 2: +100 = 180
+    expect(d.potSeries.rows[0].groom).toBe(-20);
+    expect(d.potSeries.rows[1].groom).toBe(80);
+    expect(d.potSeries.rows[2].groom).toBe(180);
+    // a year of 1200 in and 480 out
+    expect(d.potSeries.ending[0]).toBeCloseTo(720, 6);
+  });
+
+  it("counts the funding, not the spending, as what a month costs", () => {
+    expect(d.mPotFund).toBe(100);
+    expect(d.mPotSpend).toBeCloseTo(480 / 12, 6);
+    expect(d.netCost).toBe(100);
+  });
+
+  it("is not committed money, and frees up nothing when it ends", () => {
+    expect(d.committed).toBe(0);
+    expect(d.ending).toHaveLength(0);
+  });
+});
+
+describe("a pot that is drawn on harder than it is funded", () => {
+  const pot = {
+    id: "groom",
+    name: "Grooming",
+    kind: "spending" as const,
+    monthly: 50,
+    balance: 0,
+    first: toYM(START),
+    last: "",
+  };
+  const appt = item({
+    id: "appt",
+    name: "Appointment",
+    kind: "expense",
+    amount: 120,
+    first: toYM(START),
+    last: "",
+    from: "groom",
+  });
+
+  const d = derive(plan({ horizon: 12, pots: [pot], items: [appt] }), START);
+
+  it("is called out as running dry", () => {
+    expect(d.potRows[0].short).toBe(true);
+    expect(d.potsShort.map((p) => p.id)).toEqual(["groom"]);
+    expect(d.potRows[0].low).toBeCloseTo(-840, 6);
+  });
+
+  it("says how far short the funding is each month", () => {
+    expect(d.potRows[0].slack).toBeCloseTo(-70, 6);
+  });
+});
+
+describe("a pot drawn on both ways at once", () => {
+  it("counts scheduled expenses and logged purchases against the same balance", () => {
+    const pot = {
+      id: "food",
+      name: "Food",
+      kind: "spending" as const,
+      monthly: 400,
+      balance: 0,
+      first: toYM(START),
+      last: "",
+    };
+    const sub = item({
+      id: "box",
+      name: "Veg box",
+      kind: "expense",
+      amount: 60,
+      first: toYM(START),
+      last: "",
+      from: "food",
+    });
+    const d = derive(
+      plan({
+        horizon: 12,
+        pots: [pot],
+        items: [sub],
+        purchases: [{ id: "a", potId: "food", date: `${toYM(START)}-09`, note: "Billa", amount: 90 }],
+      }),
+      START,
+    );
+    const row = d.potRows[0];
+    expect(row.allocated).toBe(400);
+    expect(row.drawn).toBe(60);
+    expect(row.spent).toBe(150);
+    expect(row.left).toBe(250);
+    expect(row.draws.map((i) => i.id)).toEqual(["box"]);
+    expect(row.purchases).toHaveLength(1);
+  });
+});
+
+describe("a pot draw and a fund draw are never confused", () => {
+  it("lists each in its own place, and neither in both", () => {
+    const d = derive(
+      plan({
+        horizon: 12,
+        pots: [
+          {
+            id: "food",
+            name: "Food",
+            kind: "spending",
+            monthly: 400,
+            balance: 0,
+            first: toYM(START),
+            last: "",
+          },
+        ],
+        assets: [{ id: "house", name: "House pot", kind: "savings", value: 9000, rate: 0 }],
+        items: [
+          item({ id: "box", name: "Veg box", kind: "expense", amount: 60, first: toYM(START), from: "food" }),
+          item({ id: "roof", name: "Roof", kind: "expense", amount: 500, first: toYM(START), from: "house" }),
+        ],
+      }),
+      START,
+    );
+    const m = d.months[0];
+    // the pot draw is counted as pot spending only
+    expect(m.potSpend).toBe(60);
+    // the fund draw is on the spends list only
+    expect(m.spends.map((x) => x.id)).toEqual(["roof"]);
+    expect(m.fromSavings).toBe(500);
+    // and neither reaches the account
+    expect(m.expense).toBe(0);
+    expect(m.balance).toBe(-400);
   });
 });
 

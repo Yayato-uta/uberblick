@@ -11,7 +11,15 @@ import {
   scheduledInMonth,
   type ReimbSchedule,
 } from "./reimb";
-import { potMonth, purchasesIn, type PotMonth } from "./pots";
+import {
+  drawsIn,
+  paidFrom,
+  potMonth,
+  projectPots,
+  purchasesIn,
+  type PotMonth,
+  type PotSeries,
+} from "./pots";
 
 /* Everything the views read is computed here, in one pass, from the persisted
    data alone. Views stay dumb; the arithmetic stays testable. */
@@ -107,6 +115,16 @@ export interface CostRiseRow extends Item {
 export interface PotRow extends Pot, PotMonth {
   /** what was bought out of it this month, newest first */
   purchases: Purchase[];
+  /** the scheduled expenses that name this pot as their source */
+  draws: Item[];
+  /** what those come to in the month on show */
+  drawn: number;
+  /** the lowest this pot gets across the horizon */
+  low: number;
+  /** it runs dry at some point — more is drawn from it than funded into it */
+  short: boolean;
+  /** monthly funding less the average monthly draw: the slack, or the shortfall */
+  slack: number;
 }
 
 export interface AssetPoint {
@@ -138,6 +156,10 @@ export interface Derived {
   mSaving: number;
   mIrregular: number;
   mInterest: number;
+  /** average moved into pots each month — part of what leaves the account */
+  mPotFund: number;
+  /** average drawn out of pots each month */
+  mPotSpend: number;
   totalInterest: number;
 
   /** avg(expense) - avg(reimb) — what it really costs */
@@ -190,6 +212,12 @@ export interface Derived {
   potAllocated: number;
   potSpent: number;
   potLeft: number;
+  /** every pot's balance carried across the horizon */
+  potSeries: PotSeries;
+  /** pots that run dry somewhere in the horizon */
+  potsShort: PotRow[];
+  /** what is sitting in all the pots today */
+  potsToday: number;
 }
 
 export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start): Derived {
@@ -235,13 +263,20 @@ export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start
   const mSaving = avgOf(months, "saving");
   const mIrregular = avgOf(months, "irregular");
   const mInterest = avgOf(months, "interest");
+  const mPotFund = avgOf(months, "potFund");
+  const mPotSpend = avgOf(months, "potSpend");
   const totalInterest = sumOf(months, "interest");
 
-  const netCost = mExpense - mReimb;
-  const leftover = mIncome + mReimb - mExpense - mSaving;
+  /* Funding a pot is money out, so it counts in what a month costs; what the
+     pot then pays for must not be counted again. */
+  const netCost = mExpense + mPotFund - mReimb;
+  const leftover = mIncome + mReimb - mExpense - mPotFund - mSaving;
 
   const lowest = months.reduce((a, b) => (b.balance < a.balance ? b : a), months[0]);
-  const heaviest = months.reduce((a, b) => (b.expense > a.expense ? b : a), months[0]);
+  const heaviest = months.reduce(
+    (a, b) => (b.expense + b.potFund > a.expense + a.potFund ? b : a),
+    months[0],
+  );
 
   const floor = -Math.abs(Number(data.overdraft) || 0);
   const headroom = lowest.balance - floor;
@@ -363,8 +398,8 @@ export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start
 
   /* what you're still committed to pay, net of what people send back */
   const committed = items.reduce((s, it) => {
-    // a funded line is already covered by the fund it draws on
-    if (it.kind !== "expense" || !it.last || it.fund) return s;
+    // a line paid from a pot or a fund is already covered by what it draws on
+    if (it.kind !== "expense" || !it.last || paidFrom(it)) return s;
     const lastIdx = fromYM(it.last);
     if (lastIdx === null || lastIdx < start) return s;
     let t = 0;
@@ -380,19 +415,34 @@ export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start
 
   /* ── things that end ── */
   /* ── budget envelopes ── */
-  const potRows: PotRow[] = pots.map((pot) => ({
-    ...pot,
-    ...potMonth(pot, purchases, potMonthIdx),
-    purchases: purchasesIn(pot, purchases, potMonthIdx),
-  }));
+  const potSeries = projectPots(pots, items, purchases, horizon, start);
+
+  const potRows: PotRow[] = pots.map((pot, i) => {
+    const month = potMonth(pot, purchases, potMonthIdx, items);
+    const low = potSeries.low[i] ?? month.left;
+    return {
+      ...pot,
+      ...month,
+      purchases: purchasesIn(pot, purchases, potMonthIdx),
+      draws: drawsIn(pot, items, potMonthIdx),
+      drawn: month.spent - purchasesIn(pot, purchases, potMonthIdx).reduce((t, x) => t + x.amount, 0),
+      low,
+      short: low < -0.5,
+      // funding against what actually comes out of it, averaged over the horizon
+      slack: pot.monthly - (horizon ? (potSeries.spent[i] ?? 0) / horizon : 0),
+    };
+  });
+
   const potAllocated = potRows.reduce((s, p) => s + p.allocated, 0);
   const potSpent = potRows.reduce((s, p) => s + p.spent, 0);
   const potLeft = potRows.reduce((s, p) => s + p.left, 0);
+  const potsShort = potRows.filter((p) => p.short);
+  const potsToday = pots.reduce((s, p) => s + (Number(p.balance) || 0), 0);
 
   const ending: EndingRow[] = items
     .flatMap((it) => {
-      // a funded line ending frees up the fund, not your account
-      if (!it.last || it.kind === "income" || it.fund) return [];
+      // such a line ending frees up its pot or fund, not your account
+      if (!it.last || it.kind === "income" || paidFrom(it)) return [];
       const lastIdx = fromYM(it.last);
       if (lastIdx === null || lastIdx < start) return [];
       const perMonth =
@@ -489,6 +539,8 @@ export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start
     mSaving,
     mIrregular,
     mInterest,
+    mPotFund,
+    mPotSpend,
     totalInterest,
     netCost,
     leftover,
@@ -525,6 +577,9 @@ export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start
     potAllocated,
     potSpent,
     potLeft,
+    potSeries,
+    potsShort,
+    potsToday,
   };
 }
 
