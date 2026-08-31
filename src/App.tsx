@@ -59,7 +59,13 @@ export default function App() {
   /* Pots are looked at a month at a time, and the month is browsable — kept
      here so stepping through it doesn't reset when you switch tabs. */
   const [potMonth, setPotMonth] = useState(start);
-  const d = useMemo(() => derive(data, start, potMonth), [data, start, potMonth]);
+  /* Paid back to me is browsed a month at a time too, so a month that has
+     already gone by can still be set straight. */
+  const [peopleMonth, setPeopleMonth] = useState(start);
+  const d = useMemo(
+    () => derive(data, start, potMonth, peopleMonth),
+    [data, start, potMonth, peopleMonth],
+  );
 
   // the horizon can shrink under the selected month
   useEffect(() => {
@@ -469,6 +475,7 @@ export default function App() {
             onSetPaid={setReimbPaid}
             onSetDeferred={setReimbDeferred}
             onAdvance={addReimbAdvance}
+            onStep={(delta) => setPeopleMonth((m) => m + delta)}
           />
         )}
         {tab === "assets" && (

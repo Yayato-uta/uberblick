@@ -1164,3 +1164,78 @@ describe("a repayment settled ahead of time", () => {
   });
 });
 
+describe("the repayment record, month by month", () => {
+  /* A quarterly repayment: most months the schedule asks for nothing, and the
+     record has to work in those months all the same. */
+  const quarterly = item({
+    id: "q",
+    name: "Shared insurance",
+    kind: "expense",
+    amount: 600,
+    freq: "yearly",
+    first: toYM(START),
+    last: toYM(START + 35),
+    reimb: { who: "Sara", amount: 150, freq: "quarterly", first: toYM(START) },
+  });
+
+  it("describes whichever month is asked for, not only the current one", () => {
+    const data = plan({ horizon: 12, items: [quarterly] });
+
+    const now = derive(data, START);
+    expect(now.peopleMonthIdx).toBe(START);
+    expect(now.people[0].items[0].dueThisMonth).toBe(150);
+
+    // one month on, the quarterly schedule asks for nothing
+    const next = derive(data, START, START, START + 1);
+    expect(next.peopleMonthIdx).toBe(START + 1);
+    expect(next.people[0].items[0].dueThisMonth).toBe(0);
+    expect(next.people[0].items[0].expectedThisMonth).toBe(0);
+
+    // three months on it comes round again
+    const later = derive(data, START, START, START + 3);
+    expect(later.people[0].items[0].dueThisMonth).toBe(150);
+  });
+
+  it("lets a past month be set straight", () => {
+    const withPast = item({
+      ...quarterly,
+      reimb: {
+        who: "Sara",
+        amount: 150,
+        freq: "quarterly",
+        first: toYM(START - 6),
+        overrides: [{ month: toYM(START - 3), amount: 0 }],
+      },
+    });
+    const back = derive(plan({ horizon: 12, items: [withPast] }), START, START, START - 3);
+    expect(back.people[0].items[0].saidThisMonth).toBe(0);
+    expect(back.people[0].items[0].expectedThisMonth).toBe(0);
+  });
+
+  it("records money that turned up in a month nothing was due", () => {
+    const outOfTheBlue = item({
+      ...quarterly,
+      reimb: {
+        who: "Sara",
+        amount: 150,
+        freq: "quarterly",
+        first: toYM(START),
+        overrides: [{ month: toYM(START + 1), amount: 40 }],
+      },
+    });
+    const d = derive(plan({ horizon: 12, items: [outOfTheBlue] }), START, START, START + 1);
+    const row = d.people[0].items[0];
+    expect(row.dueThisMonth).toBe(0);
+    expect(row.saidThisMonth).toBe(40);
+    expect(row.expectedThisMonth).toBe(40);
+    // and it reaches the forecast for that month
+    expect(d.months[1].reimb).toBe(40);
+  });
+
+  it("leaves the pot month alone when the people month moves", () => {
+    const d = derive(plan({ horizon: 12, items: [quarterly] }), START, START, START + 4);
+    expect(d.potMonthIdx).toBe(START);
+    expect(d.peopleMonthIdx).toBe(START + 4);
+  });
+});
+

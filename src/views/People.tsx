@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Check, CornerDownRight, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, CornerDownRight, X } from "lucide-react";
 import type { Derived, PersonItem } from "../lib/derive";
 import { FREQ } from "../lib/constants";
 import { eur, parsePos } from "../lib/format";
-import { fromYM, longLabel, toYM } from "../lib/month";
+import { fromYM, fullLabel, longLabel, toYM } from "../lib/month";
 import { BORDER_T, Btn, Empty, Figure, Prose, TextInput, cx } from "../components/ui";
 
 export function People({
@@ -12,6 +12,7 @@ export function People({
   onSetPaid,
   onSetDeferred,
   onAdvance,
+  onStep,
 }: {
   d: Derived;
   /** record what one repayment did in one month; null puts the agreement back */
@@ -22,8 +23,11 @@ export function People({
   onSetDeferred: (itemId: string, month: string, on: boolean) => void;
   /** money sent ahead, settling instalments still to come */
   onAdvance: (itemId: string, month: string, amount: number) => void;
+  /** move the month the record describes, +1 or -1 */
+  onStep: (delta: number) => void;
 }) {
-  const thisMonth = toYM(d.start);
+  const month = toYM(d.peopleMonthIdx);
+  const onCurrent = d.peopleMonthIdx === d.start;
   return (
     <div className="mt-6">
       <Prose>
@@ -32,6 +36,38 @@ export function People({
         is an average across {d.horizon} months, so it sits below the per-payment amount whenever a
         repayment stops partway through, starts late, or doesn't arrive every month.
       </Prose>
+
+      {d.people.length > 0 && (
+        <div className="mb-4 flex items-center gap-2">
+          <button
+            onClick={() => onStep(-1)}
+            aria-label="Previous month"
+            className="flex min-h-touch min-w-touch items-center justify-center border border-rule text-ink"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <div className="flex-1 text-center">
+            <div className="font-mono text-lg">{fullLabel(d.peopleMonthIdx)}</div>
+            {onCurrent ? (
+              <div className="u-label">what happened this month</div>
+            ) : (
+              <button
+                onClick={() => onStep(d.start - d.peopleMonthIdx)}
+                className="u-label min-h-touch px-2 underline"
+              >
+                back to this month
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => onStep(1)}
+            aria-label="Next month"
+            className="flex min-h-touch min-w-touch items-center justify-center border border-rule text-ink"
+          >
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      )}
 
       {d.people.length === 0 && (
         <Empty
@@ -59,8 +95,8 @@ export function People({
                   key={it.id}
                   it={it}
                   who={p.who}
-                  month={thisMonth}
-                  monthIdx={d.start}
+                  month={month}
+                  monthIdx={d.peopleMonthIdx}
                   onSetMonth={onSetMonth}
                   onSetPaid={onSetPaid}
                   onSetDeferred={onSetDeferred}
@@ -167,9 +203,10 @@ function ItemLine({
         </div>
       )}
 
-      {/* what happened this month, and a way to say otherwise */}
-      {(it.dueThisMonth > 0 || it.saidThisMonth !== null) && (
-        <div className="mt-2 border-t border-dotted border-rule pt-2">
+      {/* What happened in the month on show. Always offered: a repayment can
+          go differently in a month the schedule never asked about — somebody
+          sends money out of the blue, or settles a quarter early. */}
+      <div className="mt-2 border-t border-dotted border-rule pt-2">
           {ahead ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="u-label">Sent ahead</span>
@@ -239,7 +276,8 @@ function ItemLine({
                 {it.saidThisMonth !== null ? (
                   it.saidThisMonth > 0 ? (
                     <span className="text-ochre">
-                      {eur(it.saidThisMonth)} instead of {eur(it.dueThisMonth)}
+                      {eur(it.saidThisMonth)}
+                      {it.dueThisMonth > 0 ? ` instead of ${eur(it.dueThisMonth)}` : " — nothing was due"}
                     </span>
                   ) : (
                     <span className="text-red">nothing this month</span>
@@ -251,8 +289,10 @@ function ItemLine({
                   </span>
                 ) : it.paidThisMonth ? (
                   <span className="text-green">{eur(it.expectedThisMonth)} paid ✓</span>
-                ) : (
+                ) : it.expectedThisMonth > 0 ? (
                   <span className="text-ink">{eur(it.expectedThisMonth)} due</span>
+                ) : (
+                  <span className="text-soft">nothing due</span>
                 )}
                 {it.carriedThisMonth > 0 && !it.deferredThisMonth && (
                   <span className="text-soft">
@@ -275,22 +315,28 @@ function ItemLine({
                   </Btn>
                 ) : (
                   <>
-                    <Btn tone="solid" onClick={() => onSetPaid(it.id, month, true)}>
-                      <Check size={12} /> Paid
-                    </Btn>
-                    <Btn onClick={() => onSetDeferred(it.id, month, true)}>
-                      <CornerDownRight size={12} /> Next month
-                    </Btn>
-                    <Btn onClick={() => onSetMonth(it.id, month, 0)}>
-                      <X size={12} /> Didn't pay
-                    </Btn>
+                    {it.expectedThisMonth > 0 && (
+                      <Btn tone="solid" onClick={() => onSetPaid(it.id, month, true)}>
+                        <Check size={12} /> Paid
+                      </Btn>
+                    )}
+                    {it.dueThisMonth > 0 && (
+                      <>
+                        <Btn onClick={() => onSetDeferred(it.id, month, true)}>
+                          <CornerDownRight size={12} /> Next month
+                        </Btn>
+                        <Btn onClick={() => onSetMonth(it.id, month, 0)}>
+                          <X size={12} /> Didn't pay
+                        </Btn>
+                      </>
+                    )}
                     <Btn
                       onClick={() => {
-                        setAmount(String(it.dueThisMonth));
+                        setAmount(it.dueThisMonth > 0 ? String(it.dueThisMonth) : "");
                         setEditing(true);
                       }}
                     >
-                      Paid less
+                      {it.dueThisMonth > 0 ? "Paid less" : "Paid something"}
                     </Btn>
                     <Btn
                       onClick={() => {
@@ -305,8 +351,7 @@ function ItemLine({
               </div>
             </div>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

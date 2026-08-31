@@ -50,7 +50,7 @@ export interface PersonItem extends Item {
   dueThisMonth: number;
   /** what is actually expected this month, once any ruling is applied */
   expectedThisMonth: number;
-  /** this month has been overridden */
+  /** the month has been overridden */
   saidThisMonth: number | null;
   /** this month has been confirmed as actually received */
   paidThisMonth: boolean;
@@ -191,6 +191,8 @@ export interface Derived {
 
   people: Person[];
   passThrough: number;
+  /** the month the per-month repayment figures describe */
+  peopleMonthIdx: number;
 
   goalRows: GoalRow[];
   goalsToFund: number;
@@ -232,7 +234,13 @@ export interface Derived {
   potsToday: number;
 }
 
-export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start): Derived {
+export function derive(
+  data: Data,
+  start: number = nowIdx(),
+  potMonthIdx = start,
+  /** the month the repayment record describes — browsable, so any month can be set straight */
+  peopleMonthIdx = start,
+): Derived {
   const items = data.items ?? [];
   const goals = data.goals ?? [];
   const assets = data.assets ?? [];
@@ -356,14 +364,14 @@ export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start
           return i !== null && i >= start;
         })
         .sort((a, b) => (a.month < b.month ? -1 : 1)),
-      dueThisMonth: scheduledInMonth(it, start),
-      expectedThisMonth: reimbInMonth(it, start),
-      saidThisMonth: overrideFor(it, start),
-      paidThisMonth: isPaid(it, start),
-      deferredThisMonth: isDeferred(it, start),
-      carriedThisMonth: carriedInto(it, start),
+      dueThisMonth: scheduledInMonth(it, peopleMonthIdx),
+      expectedThisMonth: reimbInMonth(it, peopleMonthIdx),
+      saidThisMonth: overrideFor(it, peopleMonthIdx),
+      paidThisMonth: isPaid(it, peopleMonthIdx),
+      deferredThisMonth: isDeferred(it, peopleMonthIdx),
+      carriedThisMonth: carriedInto(it, peopleMonthIdx),
       // what is still covered after this month has taken its share
-      credit: creditAt(it, start),
+      credit: creditAt(it, peopleMonthIdx),
     });
   }
   const people = [...map.values()].sort((a, b) => b.monthly - a.monthly);
@@ -570,6 +578,7 @@ export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start
     worstDrawdown,
     people,
     passThrough,
+    peopleMonthIdx,
     goalRows,
     goalsToFund,
     goalsLater,
