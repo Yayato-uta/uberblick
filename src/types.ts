@@ -33,8 +33,18 @@ export interface Reimb {
   first: YM;
   /** "YYYY-MM"; blank falls back to the expense's last */
   last: YM;
-  /** ad-hoc lump sums outside the regular rate */
+  /**
+   * Lump sums ON TOP of the agreed rate — money beyond what was owed, like a
+   * bonus put toward it. These add to the month they land in.
+   */
   extras: ReimbExtra[];
+  /**
+   * Money paid AHEAD. It arrives in the month named and then settles the
+   * instalments from that month on, one by one, until it is used up — so the
+   * total owed is unchanged and only its timing moves. Anything still unused
+   * is credit the payer is ahead by.
+   */
+  advances: ReimbExtra[];
   /**
    * What actually came in a given month, INSTEAD of the scheduled instalment.
    * Zero means they paid nothing that month; a smaller figure means they paid

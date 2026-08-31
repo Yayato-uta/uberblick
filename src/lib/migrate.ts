@@ -137,10 +137,12 @@ function normReimb(raw: Record<string, unknown>, item: Item): Reimb | null {
   const legacy = raw.freq === undefined;
   const amount = parsePos(raw.amount);
   const extras = normExtras(raw.extras);
+  const advances = normExtras(raw.advances);
   const overrides = normOverrides(raw.overrides);
   const paid = normMonths(raw.paid);
   const deferred = normMonths(raw.deferred);
-  if (amount <= 0 && extras.length === 0 && overrides.length === 0) return null;
+  if (amount <= 0 && extras.length === 0 && advances.length === 0 && overrides.length === 0)
+    return null;
 
   const freq = (raw.freq as string) in FREQ ? (raw.freq as Freq) : item.freq;
   return {
@@ -152,6 +154,8 @@ function normReimb(raw: Record<string, unknown>, item: Item): Reimb | null {
     first: legacy ? item.first : normYM(raw.first),
     last: legacy ? item.last : normYM(raw.last),
     extras,
+    // absent in every older backup, where every lump sum was money on top
+    advances,
     // absent in every backup written before this existed, and absent means
     // "every month went as agreed"
     overrides,

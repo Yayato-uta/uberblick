@@ -49,6 +49,7 @@ describe("migrate", () => {
       first: "2026-03",
       last: "2029-03",
       extras: [],
+      advances: [],
       overrides: [],
       paid: [],
       deferred: [],
@@ -172,6 +173,7 @@ describe("migrating a repayment that runs on its own clock", () => {
       first: "2026-04",
       last: "2027-03",
       extras: [{ month: "2026-12", amount: 500 }],
+      advances: [],
       overrides: [],
       paid: [],
       deferred: [],
@@ -603,6 +605,68 @@ describe("settled and held-over months", () => {
     })!;
     expect(d.items[0].reimb!.paid).toEqual(["2026-03"]);
     expect(d.items[0].reimb!.deferred).toEqual([]);
+  });
+});
+
+describe("money paid ahead", () => {
+  it("is absent in older backups, where every lump sum was money on top", () => {
+    const d = migrate({
+      items: [
+        {
+          id: "a",
+          name: "Phone",
+          kind: "expense",
+          amount: 105,
+          freq: "monthly",
+          first: "2026-01",
+          reimb: { who: "Sara", amount: 105, freq: "monthly", extras: [{ month: "2026-03", amount: 200 }] },
+        },
+      ],
+    })!;
+    expect(d.items[0].reimb!.advances).toEqual([]);
+    // and the lump sum it did have stays an on-top one
+    expect(d.items[0].reimb!.extras).toEqual([{ month: "2026-03", amount: 200 }]);
+  });
+
+  it("keeps advances apart from lump sums on top", () => {
+    const d = migrate({
+      items: [
+        {
+          id: "a",
+          name: "Phone",
+          kind: "expense",
+          amount: 105,
+          freq: "monthly",
+          first: "2026-01",
+          reimb: {
+            who: "Sara",
+            amount: 105,
+            freq: "monthly",
+            extras: [{ month: "2026-05", amount: 50 }],
+            advances: [{ month: "2026-3", amount: "1.050" }],
+          },
+        },
+      ],
+    })!;
+    expect(d.items[0].reimb!.advances).toEqual([{ month: "2026-03", amount: 1050 }]);
+    expect(d.items[0].reimb!.extras).toEqual([{ month: "2026-05", amount: 50 }]);
+  });
+
+  it("keeps a repayment that is nothing but an advance", () => {
+    const d = migrate({
+      items: [
+        {
+          id: "a",
+          name: "Phone",
+          kind: "expense",
+          amount: 105,
+          freq: "monthly",
+          first: "2026-01",
+          reimb: { who: "Sara", amount: 0, freq: "monthly", advances: [{ month: "2026-03", amount: 1260 }] },
+        },
+      ],
+    })!;
+    expect(d.items[0].reimb!.advances).toHaveLength(1);
   });
 });
 

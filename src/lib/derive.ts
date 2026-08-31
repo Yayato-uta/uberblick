@@ -4,6 +4,7 @@ import { avgOf, forecast, sumOf, type MonthRow, type Spend } from "./forecast";
 import { countOccurrences, fromYM, nowIdx, occursIn, shortLabel } from "./month";
 import {
   carriedInto,
+  creditAt,
   isDeferred,
   isPaid,
   overrideFor,
@@ -57,6 +58,8 @@ export interface PersonItem extends Item {
   deferredThisMonth: boolean;
   /** what rolled into this month from months pushed on before it */
   carriedThisMonth: number;
+  /** what they are still paid ahead by, going into this month */
+  credit: number;
 }
 
 export interface Person {
@@ -359,6 +362,8 @@ export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start
       paidThisMonth: isPaid(it, start),
       deferredThisMonth: isDeferred(it, start),
       carriedThisMonth: carriedInto(it, start),
+      // what is still covered after this month has taken its share
+      credit: creditAt(it, start),
     });
   }
   const people = [...map.values()].sort((a, b) => b.monthly - a.monthly);

@@ -23,6 +23,7 @@ function fill(o: Omit<Item, "reimb"> & { reimb?: LooseReimb }): Item {
       first: rest.first,
       last: rest.last,
       extras: [],
+      advances: [],
       overrides: [],
       paid: [],
       deferred: [],
@@ -1102,6 +1103,64 @@ describe("marking this month on Paid back to me", () => {
     const row = d.people[0].items[0];
     expect(row.carriedThisMonth).toBe(20);
     expect(row.expectedThisMonth).toBe(40);
+  });
+});
+
+describe("a repayment settled ahead of time", () => {
+  /* The whole point: paying early must not make the thing cost more or less,
+     because nothing about the agreement changed. */
+  const phone = (advances: { month: string; amount: number }[]) =>
+    item({
+      id: "phone",
+      name: "Sara's phone",
+      kind: "expense",
+      amount: 105,
+      first: toYM(START),
+      last: toYM(START + 11),
+      reimb: { who: "Sara", amount: 105, advances },
+    });
+
+  it("leaves the cost exactly where it was", () => {
+    const asAgreed = derive(plan({ horizon: 12, items: [phone([])] }), START);
+    const prepaid = derive(
+      plan({ horizon: 12, items: [phone([{ month: toYM(START + 2), amount: 1050 }])] }),
+      START,
+    );
+    expect(prepaid.netCost).toBeCloseTo(asAgreed.netCost, 6);
+    expect(prepaid.netCost).toBe(0);
+    expect(prepaid.people[0].outstanding).toBe(asAgreed.people[0].outstanding);
+    expect(prepaid.people[0].monthly).toBeCloseTo(asAgreed.people[0].monthly, 6);
+  });
+
+  it("moves only when the money lands, not how much of it there is", () => {
+    const d = derive(
+      plan({ horizon: 12, items: [phone([{ month: toYM(START + 2), amount: 1050 }])] }),
+      START,
+    );
+    expect(d.months[1].reimb).toBe(105);
+    expect(d.months[2].reimb).toBe(1050);
+    expect(d.months[3].reimb).toBe(0);
+    // and the year still nets to nothing
+    expect(d.months.reduce((s, m) => s + m.reimb - m.expense, 0)).toBeCloseTo(0, 6);
+  });
+
+  it("shows what is still covered as credit on the person's card", () => {
+    const d = derive(
+      plan({ horizon: 12, items: [phone([{ month: toYM(START - 1), amount: 315 }])] }),
+      START,
+    );
+    // she paid three months up front, one of which is already used
+    expect(d.people[0].items[0].credit).toBe(210);
+  });
+
+  it("frees up the same amount when the contract ends, prepaid or not", () => {
+    const asAgreed = derive(plan({ horizon: 12, items: [phone([])] }), START);
+    const prepaid = derive(
+      plan({ horizon: 12, items: [phone([{ month: toYM(START + 2), amount: 1050 }])] }),
+      START,
+    );
+    expect(prepaid.ending[0].remaining).toBe(asAgreed.ending[0].remaining);
+    expect(prepaid.ending[0].remainingNet).toBe(asAgreed.ending[0].remainingNet);
   });
 });
 

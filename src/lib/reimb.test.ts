@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Item } from "../types";
 import {
+  creditAt,
   isDeferred,
   isPaid,
   reimbBetween,
@@ -26,7 +27,7 @@ const base: Item = {
 describe("a repayment that leaves its dates blank", () => {
   const it0: Item = {
     ...base,
-    reimb: { who: "Sister", amount: 100, freq: "monthly", first: "", last: "", extras: [], overrides: [], paid: [], deferred: [] },
+    reimb: { who: "Sister", amount: 100, freq: "monthly", first: "", last: "", extras: [], advances: [], overrides: [], paid: [], deferred: [] },
   };
 
   it("falls back to the expense's own dates", () => {
@@ -60,6 +61,7 @@ describe("a one-off repaid monthly over a year", () => {
       first: "2026-04",
       last: "2027-03",
       extras: [],
+      advances: [],
       overrides: [],
       paid: [],
       deferred: [],
@@ -96,6 +98,7 @@ describe("lump sums on top", () => {
         { month: "2026-03", amount: 400 },
         { month: "2026-09", amount: 250 },
       ],
+      advances: [],
       overrides: [],
       paid: [],
       deferred: [],
@@ -130,7 +133,7 @@ describe("a repayment on a different cycle from the expense", () => {
   const it0: Item = {
     ...base,
     last: "",
-    reimb: { who: "Housemate", amount: 300, freq: "quarterly", first: "2026-02", last: "", extras: [], overrides: [], paid: [], deferred: [] },
+    reimb: { who: "Housemate", amount: 300, freq: "quarterly", first: "2026-02", last: "", extras: [], advances: [], overrides: [], paid: [], deferred: [] },
   };
 
   it("recurs on its own anchor", () => {
@@ -163,6 +166,7 @@ describe("months that don't go as agreed", () => {
       first: "2026-01",
       last: "",
       extras: [],
+      advances: [],
       overrides: [],
       paid: [],
       deferred: [],
@@ -227,6 +231,7 @@ describe("months that don't go as agreed", () => {
         first: "2026-01",
         last: "",
         extras: [],
+        advances: [],
         overrides: [{ month: "2026-02", amount: 20 }],
         paid: [],
         deferred: [],
@@ -248,6 +253,7 @@ describe("months that don't go as agreed", () => {
         first: "2026-01",
         last: "2026-06",
         extras: [],
+        advances: [],
         overrides: [{ month: "2026-09", amount: 40 }],
         paid: [],
         deferred: [],
@@ -274,6 +280,7 @@ describe("confirming a month, and holding one over", () => {
       first: "2026-01",
       last: "",
       extras: [],
+      advances: [],
       overrides: [],
       paid: [],
       deferred: [],
@@ -320,6 +327,7 @@ describe("confirming a month, and holding one over", () => {
         first: "2026-01",
         last: "2026-06",
         extras: [],
+        advances: [],
         overrides: [],
         paid: [],
         deferred: ["2026-06"],
@@ -356,6 +364,108 @@ describe("confirming a month, and holding one over", () => {
     };
     expect(reimbInMonth(it0, M("2026-03"))).toBe(90);
     expect(reimbInMonth(it0, M("2026-04"))).toBe(40);
+  });
+});
+
+describe("money paid ahead, rather than on top", () => {
+  /* Sara's phone: 105 a month for a year, matching what he pays. She sends the
+     balance early. The cost must not change — only when the money arrives. */
+  const phone = (advances: { month: string; amount: number }[]): Item => ({
+    ...base,
+    amount: 105,
+    first: "2026-01",
+    last: "2026-12",
+    reimb: {
+      who: "Sara",
+      amount: 105,
+      freq: "monthly",
+      first: "",
+      last: "",
+      extras: [],
+      advances,
+      overrides: [],
+      paid: [],
+      deferred: [],
+    },
+  });
+
+  it("settles the instalments it covers instead of adding to them", () => {
+    // two months paid as usual, then the remaining ten in one go
+    const it0 = phone([{ month: "2026-03", amount: 1050 }]);
+    expect(reimbInMonth(it0, M("2026-01"))).toBe(105);
+    expect(reimbInMonth(it0, M("2026-02"))).toBe(105);
+    expect(reimbInMonth(it0, M("2026-03"))).toBe(1050);
+    expect(reimbInMonth(it0, M("2026-04"))).toBe(0);
+    expect(reimbInMonth(it0, M("2026-12"))).toBe(0);
+  });
+
+  it("leaves the year's total exactly what was owed", () => {
+    const it0 = phone([{ month: "2026-03", amount: 1050 }]);
+    expect(reimbBetween(it0, M("2026-01"), M("2026-12"))).toBe(1260);
+  });
+
+  it("reports what is still paid ahead as credit", () => {
+    const it0 = phone([{ month: "2026-03", amount: 1050 }]);
+    // arrives in March and covers March itself first
+    expect(creditAt(it0, M("2026-03"))).toBe(945);
+    expect(creditAt(it0, M("2026-06"))).toBe(630);
+    // ten instalments covered, so it runs out exactly at the end
+    expect(creditAt(it0, M("2026-12"))).toBe(0);
+  });
+
+  it("keeps an overpayment visible as credit rather than swallowing it", () => {
+    // she sends a full year's worth after already paying two months
+    const it0 = phone([{ month: "2026-03", amount: 1260 }]);
+    expect(reimbBetween(it0, M("2026-01"), M("2026-12"))).toBe(1470);
+    // 210 more than the year needed, and it says so
+    expect(creditAt(it0, M("2026-12"))).toBe(210);
+  });
+
+  it("still treats a lump sum on top as money beyond the agreement", () => {
+    const onTop: Item = {
+      ...phone([]),
+      reimb: { ...phone([]).reimb!, extras: [{ month: "2026-03", amount: 200 }] },
+    };
+    // a bonus adds to the month and to the total
+    expect(reimbInMonth(onTop, M("2026-03"))).toBe(305);
+    expect(reimbBetween(onTop, M("2026-01"), M("2026-12"))).toBe(1460);
+  });
+
+  it("covers a quarterly repayment the same way", () => {
+    const q: Item = {
+      ...base,
+      last: "",
+      reimb: {
+        who: "Sara",
+        amount: 300,
+        freq: "quarterly",
+        first: "2026-01",
+        last: "",
+        extras: [],
+        advances: [{ month: "2026-04", amount: 600 }],
+        overrides: [],
+        paid: [],
+        deferred: [],
+      },
+    };
+    expect(reimbInMonth(q, M("2026-01"))).toBe(300);
+    expect(reimbInMonth(q, M("2026-04"))).toBe(600); // arrives, covers April's 300
+    expect(reimbInMonth(q, M("2026-07"))).toBe(0); // covered by the rest
+    expect(reimbInMonth(q, M("2026-10"))).toBe(300); // credit exhausted
+  });
+
+  it("lets an override stand over the ledger, and settles nothing that month", () => {
+    const it0: Item = {
+      ...phone([{ month: "2026-03", amount: 210 }]),
+    };
+    const withSaid: Item = {
+      ...it0,
+      reimb: { ...it0.reimb!, overrides: [{ month: "2026-04", amount: 0 }] },
+    };
+    // April says nothing turned up, so the credit is untouched and waits
+    expect(reimbInMonth(withSaid, M("2026-04"))).toBe(0);
+    expect(reimbInMonth(withSaid, M("2026-05"))).toBe(0);
+    expect(creditAt(withSaid, M("2026-05"))).toBe(0);
   });
 });
 

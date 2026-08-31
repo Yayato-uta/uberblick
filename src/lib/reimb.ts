@@ -17,6 +17,7 @@ export interface ReimbSchedule {
   first: YM;
   last: YM;
   extras: ReimbExtra[];
+  advances: ReimbExtra[];
   overrides: ReimbExtra[];
   paid: YM[];
   deferred: YM[];
@@ -33,6 +34,7 @@ export function reimbSchedule(it: Item): ReimbSchedule | null {
     first: r.first || it.first,
     last: r.last === undefined || r.last === "" ? it.last : r.last,
     extras: r.extras ?? [],
+    advances: r.advances ?? [],
     overrides: r.overrides ?? [],
     paid: r.paid ?? [],
     deferred: r.deferred ?? [],
@@ -86,6 +88,60 @@ export function overrideFor(it: Item, idx: number): number | null {
   return null;
 }
 
+/** Lump sums landing in month `idx`, by kind. */
+const sumIn = (rows: ReimbExtra[], idx: number): number => {
+  let t = 0;
+  for (const e of rows) if (fromYM(e.month) === idx) t += Number(e.amount) || 0;
+  return t;
+};
+
+export interface AdvanceState {
+  /** paid ahead in this month */
+  arrived: number;
+  /** this month's instalment settled out of money already paid ahead */
+  absorbed: number;
+  /** still paid ahead after this month — what the payer is in credit by */
+  credit: number;
+}
+
+/**
+ * How the advance ledger stands in month `idx`.
+ *
+ * Money paid ahead becomes a credit, and each month's instalment is taken out
+ * of that credit before anything fresh is expected. This is what keeps a
+ * prepayment from being counted twice: the lump arrives once, and the months it
+ * covers stop asking for money.
+ */
+export function advanceState(it: Item, idx: number): AdvanceState {
+  const s = reimbSchedule(it);
+  const scheduleFirst = s && fromYM(s.first);
+  if (!s || scheduleFirst === null) return { arrived: 0, absorbed: 0, credit: 0 };
+
+  /* Money can be sent before the first instalment is even due, so the ledger
+     starts at whichever comes first — the schedule, or the earliest advance. */
+  const advanceMonths = s.advances
+    .map((e) => fromYM(e.month))
+    .filter((v): v is number => v !== null);
+  const first = Math.min(scheduleFirst, ...advanceMonths);
+  if (idx < first) return { arrived: 0, absorbed: 0, credit: 0 };
+
+  let credit = 0;
+  let arrived = 0;
+  let absorbed = 0;
+  for (let i = first; i <= idx; i++) {
+    arrived = sumIn(s.advances, i);
+    credit += arrived;
+    // an override says what actually turned up, so it settles nothing ahead
+    const due = overrideFor(it, i) !== null ? 0 : scheduledInMonth(it, i);
+    absorbed = Math.min(credit, due);
+    credit -= absorbed;
+  }
+  return { arrived, absorbed, credit };
+}
+
+/** What the payer is still ahead by, going into month `idx`. */
+export const creditAt = (it: Item, idx: number): number => advanceState(it, idx).credit;
+
 /**
  * What comes back in month `idx`.
  *
@@ -97,6 +153,7 @@ export function reimbInMonth(it: Item, idx: number): number {
   const s = reimbSchedule(it);
   if (!s) return 0;
   const override = overrideFor(it, idx);
+  const { arrived, absorbed } = advanceState(it, idx);
   let t: number;
   if (override !== null) {
     t = override;
@@ -104,9 +161,13 @@ export function reimbInMonth(it: Item, idx: number): number {
     // pushed on: nothing arrives, and what was due travels to the next month
     t = 0;
   } else {
-    t = (occursIn(s, idx) ? s.amount : 0) + carriedInto(it, idx);
+    // whatever the instalment was, less the part already paid ahead
+    const due = (occursIn(s, idx) ? s.amount : 0) + carriedInto(it, idx);
+    t = Math.max(0, due - absorbed);
   }
-  for (const e of s.extras) if (fromYM(e.month) === idx) t += Number(e.amount) || 0;
+  // the advance itself is money in, in the month it lands
+  t += arrived;
+  t += sumIn(s.extras, idx);
   return t;
 }
 
@@ -120,7 +181,7 @@ export function reimbEnd(it: Item): number | null {
   if (!s) return null;
   const sched = fromYM(s.last);
   if (sched === null) return null;
-  const lumps = s.extras
+  const lumps = [...s.extras, ...s.advances]
     .map((e) => fromYM(e.month))
     .filter((v): v is number => v !== null);
   /* An override that pays something in a month past the agreed end still puts

@@ -215,6 +215,21 @@ export default function App() {
       }),
     }));
 
+  /**
+   * Record money sent ahead. It settles the instalments from that month on,
+   * so the total owed is unchanged — only when it arrives.
+   */
+  const addReimbAdvance = (itemId: string, month: string, amount: number) =>
+    update((prev) => ({
+      ...prev,
+      sample: false,
+      items: prev.items.map((it) => {
+        if (it.id !== itemId || !it.reimb || amount <= 0) return it;
+        const rest = it.reimb.advances.filter((a) => a.month !== month);
+        return { ...it, reimb: { ...it.reimb, advances: [...rest, { month, amount }] } };
+      }),
+    }));
+
   /* ── budget pots ── */
 
   const addPot = (p: Omit<Pot, "id">) =>
@@ -453,6 +468,7 @@ export default function App() {
             onSetMonth={setReimbMonth}
             onSetPaid={setReimbPaid}
             onSetDeferred={setReimbDeferred}
+            onAdvance={addReimbAdvance}
           />
         )}
         {tab === "assets" && (

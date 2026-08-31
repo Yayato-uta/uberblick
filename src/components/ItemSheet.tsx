@@ -25,6 +25,8 @@ export interface ItemDraft {
   reimbFirst: string;
   reimbLast: string;
   extras: { month: string; amount: string }[];
+  /** lump sums paid ahead, settling instalments still to come */
+  advances: { month: string; amount: string }[];
   /** months that went differently — "" amount means they paid nothing */
   overrides: { month: string; amount: string }[];
   /** Pot or Asset id this comes out of, or "" for the current account */
@@ -47,6 +49,7 @@ export const blankDraft = (): ItemDraft => ({
   reimbFirst: "",
   reimbLast: "",
   extras: [],
+  advances: [],
   overrides: [],
   from: "",
 });
@@ -67,6 +70,10 @@ export const draftFromItem = (it: Item): ItemDraft => ({
   reimbFirst: it.reimb?.first || it.first,
   reimbLast: it.reimb?.last ?? "",
   extras: (it.reimb?.extras ?? []).map((e) => ({ month: e.month, amount: String(e.amount) })),
+  advances: (it.reimb?.advances ?? []).map((e) => ({
+    month: e.month,
+    amount: String(e.amount),
+  })),
   overrides: (it.reimb?.overrides ?? []).map((e) => ({
     month: e.month,
     amount: String(e.amount),
@@ -137,12 +144,15 @@ export function ItemSheet({
       const extras = f.extras
         .map((e) => ({ month: e.month, amount: parsePos(e.amount) }))
         .filter((e) => e.month && e.amount > 0);
+      const advances = f.advances
+        .map((e) => ({ month: e.month, amount: parsePos(e.amount) }))
+        .filter((e) => e.month && e.amount > 0);
       // an override of zero is meaningful — it records a month they didn't pay
       const overrides = f.overrides
         .filter((e) => e.month)
         .map((e) => ({ month: e.month, amount: parsePos(e.amount) }));
       // lump sums alone are a repayment too, so don't require an instalment
-      if (amount > 0 || extras.length > 0 || overrides.length > 0) {
+      if (amount > 0 || extras.length > 0 || advances.length > 0 || overrides.length > 0) {
         item.reimb = {
           who: f.reimbWho.trim() || "Someone",
           amount,
@@ -150,6 +160,7 @@ export function ItemSheet({
           first: f.reimbFirst || f.first,
           last: f.reimbLast,
           extras,
+          advances,
           overrides,
           // set from Paid back to me, and carried through an edit untouched
           paid: draft?.id ? (originalReimb?.paid ?? []) : [],
@@ -373,7 +384,9 @@ export function ItemSheet({
               <div className="mt-4 border-t border-dotted border-rule pt-3">
                 <Label>Extra lump sums on top</Label>
                 <p className="mb-2 text-xs text-soft">
-                  One-off payments outside the regular rate — a bonus put toward it, say.
+                  Money <em>beyond</em> what was agreed — a bonus put toward it, say. It adds to
+                  the total they pay. For money sent early against instalments already owed, use
+                  "Paid in advance" below instead.
                 </p>
 
                 {f.extras.map((e, i) => (
@@ -419,6 +432,61 @@ export function ItemSheet({
                   }
                 >
                   <Plus size={12} /> Add a lump sum
+                </Btn>
+              </div>
+
+              <div className="mt-4 border-t border-dotted border-rule pt-3">
+                <Label>Paid in advance</Label>
+                <p className="mb-2 text-xs text-soft">
+                  Money sent ahead of time. It settles the instalments from that month on until
+                  it runs out, so the total owed doesn't change — only when it arrives.
+                </p>
+
+                {f.advances.map((e, i) => (
+                  <div key={i} className="mb-2 flex items-end gap-2">
+                    <div className="flex-1">
+                      <MonthField
+                        value={e.month}
+                        onChange={(v) =>
+                          set({
+                            advances: f.advances.map((x, j) => (j === i ? { ...x, month: v } : x)),
+                          })
+                        }
+                        label="Month it arrived"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <TextInput
+                        inputMode="decimal"
+                        value={e.amount}
+                        placeholder="€"
+                        aria-label="Amount paid in advance"
+                        onChange={(ev) =>
+                          set({
+                            advances: f.advances.map((x, j) =>
+                              j === i ? { ...x, amount: ev.target.value } : x,
+                            ),
+                          })
+                        }
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => set({ advances: f.advances.filter((_, j) => j !== i) })}
+                      aria-label="Remove this advance"
+                      className="flex min-h-touch min-w-touch items-center justify-center border border-rule text-red"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+
+                <Btn
+                  onClick={() =>
+                    set({ advances: [...f.advances, { month: toYM(nowIdx()), amount: "" }] })
+                  }
+                >
+                  <Plus size={12} /> Add an advance
                 </Btn>
               </div>
 

@@ -11,6 +11,7 @@ export function People({
   onSetMonth,
   onSetPaid,
   onSetDeferred,
+  onAdvance,
 }: {
   d: Derived;
   /** record what one repayment did in one month; null puts the agreement back */
@@ -19,6 +20,8 @@ export function People({
   onSetPaid: (itemId: string, month: string, on: boolean) => void;
   /** push a month's instalment into the next month */
   onSetDeferred: (itemId: string, month: string, on: boolean) => void;
+  /** money sent ahead, settling instalments still to come */
+  onAdvance: (itemId: string, month: string, amount: number) => void;
 }) {
   const thisMonth = toYM(d.start);
   return (
@@ -61,6 +64,7 @@ export function People({
                   onSetMonth={onSetMonth}
                   onSetPaid={onSetPaid}
                   onSetDeferred={onSetDeferred}
+                  onAdvance={onAdvance}
                 />
               ))}
             </div>
@@ -87,6 +91,7 @@ function ItemLine({
   onSetMonth,
   onSetPaid,
   onSetDeferred,
+  onAdvance,
 }: {
   it: PersonItem;
   who: string;
@@ -95,9 +100,11 @@ function ItemLine({
   onSetMonth: (itemId: string, month: string, amount: number | null) => void;
   onSetPaid: (itemId: string, month: string, on: boolean) => void;
   onSetDeferred: (itemId: string, month: string, on: boolean) => void;
+  onAdvance: (itemId: string, month: string, amount: number) => void;
 }) {
   const { sched, stop } = it;
   const [editing, setEditing] = useState(false);
+  const [ahead, setAhead] = useState(false);
   const [amount, setAmount] = useState("");
 
   return (
@@ -119,6 +126,12 @@ function ItemLine({
           <div className="text-xs text-soft">still to come</div>
         </div>
       </div>
+
+      {it.credit > 0.005 && (
+        <div className="mt-1 font-mono text-xs text-green">
+          {eur(it.credit)} paid ahead — the next instalments are already covered.
+        </div>
+      )}
 
       {it.lumps.length > 0 && (
         <div className="mt-1 font-mono text-xs text-ochre">
@@ -157,7 +170,40 @@ function ItemLine({
       {/* what happened this month, and a way to say otherwise */}
       {(it.dueThisMonth > 0 || it.saidThisMonth !== null) && (
         <div className="mt-2 border-t border-dotted border-rule pt-2">
-          {editing ? (
+          {ahead ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="u-label">Sent ahead</span>
+              <div className="w-24">
+                <TextInput
+                  inputMode="decimal"
+                  autoFocus
+                  value={amount}
+                  placeholder="€"
+                  aria-label={`Amount ${who} sent ahead`}
+                  onChange={(e) => setAmount(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter") return;
+                    onAdvance(it.id, month, parsePos(amount));
+                    setAhead(false);
+                  }}
+                />
+              </div>
+              <Btn
+                tone="solid"
+                onClick={() => {
+                  onAdvance(it.id, month, parsePos(amount));
+                  setAhead(false);
+                }}
+              >
+                <Check size={13} /> Save
+              </Btn>
+              <Btn onClick={() => setAhead(false)}>Cancel</Btn>
+              <p className="w-full text-xs text-soft">
+                It covers the instalments from {longLabel(monthIdx)} on until it runs out — the
+                total owed doesn't change.
+              </p>
+            </div>
+          ) : editing ? (
             <div className="flex flex-wrap items-center gap-2">
               <span className="u-label">{longLabel(monthIdx)}</span>
               <div className="w-24">
@@ -245,6 +291,14 @@ function ItemLine({
                       }}
                     >
                       Paid less
+                    </Btn>
+                    <Btn
+                      onClick={() => {
+                        setAmount("");
+                        setAhead(true);
+                      }}
+                    >
+                      Sent ahead
                     </Btn>
                   </>
                 )}
