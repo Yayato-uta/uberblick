@@ -24,6 +24,8 @@ function fill(o: Omit<Item, "reimb"> & { reimb?: LooseReimb }): Item {
       last: rest.last,
       extras: [],
       overrides: [],
+      paid: [],
+      deferred: [],
       ...reimb,
     },
   };
@@ -1050,6 +1052,56 @@ describe("a pot draw and a fund draw are never confused", () => {
     // and neither reaches the account
     expect(m.expense).toBe(0);
     expect(m.balance).toBe(-400);
+  });
+});
+
+describe("marking this month on Paid back to me", () => {
+  const line = item({
+    id: "phone",
+    name: "Sara's phone",
+    kind: "expense",
+    amount: 32,
+    first: toYM(START - 3),
+    last: toYM(START + 20),
+    reimb: { who: "Sara", amount: 20 },
+  });
+
+  it("shows a month as settled without moving a figure", () => {
+    const confirmed = item({
+      ...line,
+      reimb: { who: "Sara", amount: 20, paid: [toYM(START)] },
+    });
+    const d = derive(plan({ horizon: 12, items: [confirmed] }), START);
+    const row = d.people[0].items[0];
+    expect(row.paidThisMonth).toBe(true);
+    expect(row.expectedThisMonth).toBe(20);
+    expect(d.months[0].reimb).toBe(20);
+  });
+
+  it("empties this month and doubles the next when it is held over", () => {
+    const held = item({
+      ...line,
+      reimb: { who: "Sara", amount: 20, deferred: [toYM(START)] },
+    });
+    const d = derive(plan({ horizon: 12, items: [held] }), START);
+    const row = d.people[0].items[0];
+    expect(row.deferredThisMonth).toBe(true);
+    expect(row.expectedThisMonth).toBe(0);
+    expect(d.months[0].reimb).toBe(0);
+    expect(d.months[1].reimb).toBe(40);
+    // the person's total is unchanged — it only arrives later
+    expect(d.people[0].monthly).toBeCloseTo(20, 6);
+  });
+
+  it("tells the receiving month what was held over into it", () => {
+    const held = item({
+      ...line,
+      reimb: { who: "Sara", amount: 20, deferred: [toYM(START - 1)] },
+    });
+    const d = derive(plan({ horizon: 12, items: [held] }), START);
+    const row = d.people[0].items[0];
+    expect(row.carriedThisMonth).toBe(20);
+    expect(row.expectedThisMonth).toBe(40);
   });
 });
 

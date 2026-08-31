@@ -23,6 +23,8 @@ function fill(o: Omit<Item, "reimb"> & { reimb?: LooseReimb }): Item {
       last: rest.last,
       extras: [],
       overrides: [],
+      paid: [],
+      deferred: [],
       ...reimb,
     },
   };

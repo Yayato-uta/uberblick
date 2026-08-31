@@ -172,6 +172,49 @@ export default function App() {
       }),
     }));
 
+  /** Mark a month settled, or take the mark off. */
+  const setReimbPaid = (itemId: string, month: string, on: boolean) =>
+    update((prev) => ({
+      ...prev,
+      sample: false,
+      items: prev.items.map((it) => {
+        if (it.id !== itemId || !it.reimb) return it;
+        const paid = it.reimb.paid.filter((m) => m !== month);
+        return {
+          ...it,
+          reimb: {
+            ...it.reimb,
+            paid: on ? [...paid, month].sort() : paid,
+            // settled and postponed are mutually exclusive
+            deferred: on ? it.reimb.deferred.filter((m) => m !== month) : it.reimb.deferred,
+          },
+        };
+      }),
+    }));
+
+  /** Push a month's instalment into the next month, or bring it back. */
+  const setReimbDeferred = (itemId: string, month: string, on: boolean) =>
+    update((prev) => ({
+      ...prev,
+      sample: false,
+      items: prev.items.map((it) => {
+        if (it.id !== itemId || !it.reimb) return it;
+        const deferred = it.reimb.deferred.filter((m) => m !== month);
+        return {
+          ...it,
+          reimb: {
+            ...it.reimb,
+            deferred: on ? [...deferred, month].sort() : deferred,
+            paid: on ? it.reimb.paid.filter((m) => m !== month) : it.reimb.paid,
+            // an override is the last word, so postponing clears it
+            overrides: on
+              ? it.reimb.overrides.filter((o) => o.month !== month)
+              : it.reimb.overrides,
+          },
+        };
+      }),
+    }));
+
   /* ── budget pots ── */
 
   const addPot = (p: Omit<Pot, "id">) =>
@@ -404,7 +447,14 @@ export default function App() {
             onDelete={removeItem}
           />
         )}
-        {tab === "people" && <People d={d} onSetMonth={setReimbMonth} />}
+        {tab === "people" && (
+          <People
+            d={d}
+            onSetMonth={setReimbMonth}
+            onSetPaid={setReimbPaid}
+            onSetDeferred={setReimbDeferred}
+          />
+        )}
         {tab === "assets" && (
           <Assets
             d={d}
@@ -469,6 +519,7 @@ export default function App() {
 
       <ItemSheet
         draft={draft}
+        allItems={data.items}
         pots={data.pots}
         assets={data.assets}
         onSave={upsertItem}

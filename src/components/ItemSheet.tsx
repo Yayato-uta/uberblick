@@ -76,12 +76,15 @@ export const draftFromItem = (it: Item): ItemDraft => ({
 
 export function ItemSheet({
   draft,
+  allItems,
   pots,
   assets,
   onSave,
   onClose,
 }: {
   draft: ItemDraft | null;
+  /** every line, so an edit can keep what isn't shown in this form */
+  allItems: Item[];
   /** the envelopes an expense can be paid out of */
   pots: Pot[];
   /** the funds an expense can be paid out of */
@@ -91,6 +94,11 @@ export function ItemSheet({
 }) {
   const [f, setF] = useState<ItemDraft>(draft ?? blankDraft());
   const [touched, setTouched] = useState(false);
+  /* The month-by-month record lives on Paid back to me; editing the agreement
+     here must not wipe it. */
+  const originalReimb = draft?.id
+    ? allItems.find((i) => i.id === draft.id)?.reimb
+    : undefined;
 
   // re-seed whenever a different row is opened
   const [seed, setSeed] = useState(draft);
@@ -143,6 +151,9 @@ export function ItemSheet({
           last: f.reimbLast,
           extras,
           overrides,
+          // set from Paid back to me, and carried through an edit untouched
+          paid: draft?.id ? (originalReimb?.paid ?? []) : [],
+          deferred: draft?.id ? (originalReimb?.deferred ?? []) : [],
         };
       }
     }

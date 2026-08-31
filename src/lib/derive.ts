@@ -3,6 +3,9 @@ import { FREQ } from "./constants";
 import { avgOf, forecast, sumOf, type MonthRow, type Spend } from "./forecast";
 import { countOccurrences, fromYM, nowIdx, occursIn, shortLabel } from "./month";
 import {
+  carriedInto,
+  isDeferred,
+  isPaid,
   overrideFor,
   reimbBetween,
   reimbEnd,
@@ -48,6 +51,12 @@ export interface PersonItem extends Item {
   expectedThisMonth: number;
   /** this month has been overridden */
   saidThisMonth: number | null;
+  /** this month has been confirmed as actually received */
+  paidThisMonth: boolean;
+  /** this month's instalment has been pushed into the next one */
+  deferredThisMonth: boolean;
+  /** what rolled into this month from months pushed on before it */
+  carriedThisMonth: number;
 }
 
 export interface Person {
@@ -347,6 +356,9 @@ export function derive(data: Data, start: number = nowIdx(), potMonthIdx = start
       dueThisMonth: scheduledInMonth(it, start),
       expectedThisMonth: reimbInMonth(it, start),
       saidThisMonth: overrideFor(it, start),
+      paidThisMonth: isPaid(it, start),
+      deferredThisMonth: isDeferred(it, start),
+      carriedThisMonth: carriedInto(it, start),
     });
   }
   const people = [...map.values()].sort((a, b) => b.monthly - a.monthly);

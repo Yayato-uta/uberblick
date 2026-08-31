@@ -109,6 +109,20 @@ function normOverrides(raw: unknown): ReimbExtra[] {
   return out;
 }
 
+/** Months listed once each, junk dropped. Absent means nothing was recorded. */
+function normMonths(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const v of raw) {
+    const m = normYM(v);
+    if (!m || seen.has(m)) continue;
+    seen.add(m);
+    out.push(m);
+  }
+  return out.sort();
+}
+
 /**
  * A repayment with no `freq` came from the early shape, where it followed the
  * expense exactly. Spelling that out — freq, first and last taken from the item —
@@ -124,6 +138,8 @@ function normReimb(raw: Record<string, unknown>, item: Item): Reimb | null {
   const amount = parsePos(raw.amount);
   const extras = normExtras(raw.extras);
   const overrides = normOverrides(raw.overrides);
+  const paid = normMonths(raw.paid);
+  const deferred = normMonths(raw.deferred);
   if (amount <= 0 && extras.length === 0 && overrides.length === 0) return null;
 
   const freq = (raw.freq as string) in FREQ ? (raw.freq as Freq) : item.freq;
@@ -139,6 +155,9 @@ function normReimb(raw: Record<string, unknown>, item: Item): Reimb | null {
     // absent in every backup written before this existed, and absent means
     // "every month went as agreed"
     overrides,
+    paid,
+    // a month cannot both be settled and be waiting for next month
+    deferred: deferred.filter((m) => !paid.includes(m)),
   };
 }
 

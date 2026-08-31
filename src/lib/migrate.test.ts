@@ -50,6 +50,8 @@ describe("migrate", () => {
       last: "2029-03",
       extras: [],
       overrides: [],
+      paid: [],
+      deferred: [],
     });
     expect(d.opening).toBe(-1200);
     // the fields that version never had come in at their defaults
@@ -171,6 +173,8 @@ describe("migrating a repayment that runs on its own clock", () => {
       last: "2027-03",
       extras: [{ month: "2026-12", amount: 500 }],
       overrides: [],
+      paid: [],
+      deferred: [],
     });
   });
 
@@ -537,6 +541,68 @@ describe("pots written by an earlier build of this app", () => {
   it("round-trips its own export", () => {
     const once = migrate(older)!;
     expect(migrate(JSON.parse(JSON.stringify(once)))).toEqual(once);
+  });
+});
+
+describe("settled and held-over months", () => {
+  it("are absent in older backups", () => {
+    const d = migrate({
+      items: [
+        {
+          id: "a",
+          name: "Loan",
+          kind: "expense",
+          amount: 100,
+          freq: "monthly",
+          first: "2026-01",
+          reimb: { who: "X", amount: 50 },
+        },
+      ],
+    })!;
+    expect(d.items[0].reimb!.paid).toEqual([]);
+    expect(d.items[0].reimb!.deferred).toEqual([]);
+  });
+
+  it("tidy sloppy months, drop junk and never list one twice", () => {
+    const d = migrate({
+      items: [
+        {
+          id: "a",
+          name: "Loan",
+          kind: "expense",
+          amount: 100,
+          freq: "monthly",
+          first: "2026-01",
+          reimb: {
+            who: "X",
+            amount: 50,
+            freq: "monthly",
+            paid: ["2026-2", "2026-02", "nope", "2026-01"],
+            deferred: ["2026-05"],
+          },
+        },
+      ],
+    })!;
+    expect(d.items[0].reimb!.paid).toEqual(["2026-01", "2026-02"]);
+    expect(d.items[0].reimb!.deferred).toEqual(["2026-05"]);
+  });
+
+  it("never let a month be both settled and held over", () => {
+    const d = migrate({
+      items: [
+        {
+          id: "a",
+          name: "Loan",
+          kind: "expense",
+          amount: 100,
+          freq: "monthly",
+          first: "2026-01",
+          reimb: { who: "X", amount: 50, freq: "monthly", paid: ["2026-03"], deferred: ["2026-03"] },
+        },
+      ],
+    })!;
+    expect(d.items[0].reimb!.paid).toEqual(["2026-03"]);
+    expect(d.items[0].reimb!.deferred).toEqual([]);
   });
 });
 

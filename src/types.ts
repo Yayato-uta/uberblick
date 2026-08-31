@@ -41,6 +41,18 @@ export interface Reimb {
    * less; a run of them is a pause. Absent months follow the schedule.
    */
   overrides: ReimbExtra[];
+  /**
+   * Months confirmed as actually received. This changes no figure — the plan
+   * already assumes the money arrives — it records that you have seen it, so
+   * an unconfirmed month past its date stands out.
+   */
+  paid: YM[];
+  /**
+   * Months whose instalment was pushed into the following month. Nothing
+   * arrives in the month named, and the one after it gets that instalment on
+   * top of its own. Defer two in a row and both land in the third.
+   */
+  deferred: YM[];
 }
 
 export interface Item {

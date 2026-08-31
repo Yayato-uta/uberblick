@@ -18,6 +18,8 @@ export interface ReimbSchedule {
   last: YM;
   extras: ReimbExtra[];
   overrides: ReimbExtra[];
+  paid: YM[];
+  deferred: YM[];
 }
 
 /** The repayment's effective schedule, with blank dates filled from the item. */
@@ -32,7 +34,39 @@ export function reimbSchedule(it: Item): ReimbSchedule | null {
     last: r.last === undefined || r.last === "" ? it.last : r.last,
     extras: r.extras ?? [],
     overrides: r.overrides ?? [],
+    paid: r.paid ?? [],
+    deferred: r.deferred ?? [],
   };
+}
+
+/** Has this month been confirmed as actually received? */
+export function isPaid(it: Item, idx: number): boolean {
+  const s = reimbSchedule(it);
+  if (!s) return false;
+  return s.paid.some((m) => fromYM(m) === idx);
+}
+
+/**
+ * Is this month's instalment being pushed into the next one?
+ *
+ * An override is the last word on what turned up, so a month that has one is
+ * never treated as deferred — the two would otherwise contradict each other.
+ */
+export function isDeferred(it: Item, idx: number): boolean {
+  const s = reimbSchedule(it);
+  if (!s) return false;
+  if (overrideFor(it, idx) !== null) return false;
+  return s.deferred.some((m) => fromYM(m) === idx);
+}
+
+/**
+ * What rolls into month `idx` from months deferred before it. Walks back while
+ * each previous month was pushed on, so a run of deferrals all lands together.
+ */
+export function carriedInto(it: Item, idx: number): number {
+  let total = 0;
+  for (let i = idx - 1; isDeferred(it, i); i--) total += scheduledInMonth(it, i);
+  return total;
 }
 
 /** What was agreed for this month, before any override. */
@@ -63,7 +97,15 @@ export function reimbInMonth(it: Item, idx: number): number {
   const s = reimbSchedule(it);
   if (!s) return 0;
   const override = overrideFor(it, idx);
-  let t = override !== null ? override : occursIn(s, idx) ? s.amount : 0;
+  let t: number;
+  if (override !== null) {
+    t = override;
+  } else if (isDeferred(it, idx)) {
+    // pushed on: nothing arrives, and what was due travels to the next month
+    t = 0;
+  } else {
+    t = (occursIn(s, idx) ? s.amount : 0) + carriedInto(it, idx);
+  }
   for (const e of s.extras) if (fromYM(e.month) === idx) t += Number(e.amount) || 0;
   return t;
 }
@@ -87,7 +129,13 @@ export function reimbEnd(it: Item): number | null {
     .filter((o) => (Number(o.amount) || 0) > 0)
     .map((o) => fromYM(o.month))
     .filter((v): v is number => v !== null);
-  return Math.max(sched, ...lumps, ...late);
+  /* Deferring the last instalment carries it past the agreed end, so the end
+     moves with it — otherwise the money would fall off the schedule. */
+  const pushed = s.deferred
+    .map((m) => fromYM(m))
+    .filter((v): v is number => v !== null && v <= sched)
+    .map((v) => v + 1);
+  return Math.max(sched, ...lumps, ...late, ...pushed);
 }
 
 /** Everything coming back over [from, to] inclusive. */

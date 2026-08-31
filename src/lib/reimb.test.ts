@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Item } from "../types";
-import { reimbBetween, reimbEnd, reimbInMonth, reimbSchedule } from "./reimb";
+import {
+  isDeferred,
+  isPaid,
+  reimbBetween,
+  reimbEnd,
+  reimbInMonth,
+  reimbSchedule,
+} from "./reimb";
 import { fromYM } from "./month";
 
 const M = (ym: string) => fromYM(ym)!;
@@ -19,7 +26,7 @@ const base: Item = {
 describe("a repayment that leaves its dates blank", () => {
   const it0: Item = {
     ...base,
-    reimb: { who: "Sister", amount: 100, freq: "monthly", first: "", last: "", extras: [], overrides: [] },
+    reimb: { who: "Sister", amount: 100, freq: "monthly", first: "", last: "", extras: [], overrides: [], paid: [], deferred: [] },
   };
 
   it("falls back to the expense's own dates", () => {
@@ -54,6 +61,8 @@ describe("a one-off repaid monthly over a year", () => {
       last: "2027-03",
       extras: [],
       overrides: [],
+      paid: [],
+      deferred: [],
     },
   };
 
@@ -88,6 +97,8 @@ describe("lump sums on top", () => {
         { month: "2026-09", amount: 250 },
       ],
       overrides: [],
+      paid: [],
+      deferred: [],
     },
   };
 
@@ -119,7 +130,7 @@ describe("a repayment on a different cycle from the expense", () => {
   const it0: Item = {
     ...base,
     last: "",
-    reimb: { who: "Housemate", amount: 300, freq: "quarterly", first: "2026-02", last: "", extras: [], overrides: [] },
+    reimb: { who: "Housemate", amount: 300, freq: "quarterly", first: "2026-02", last: "", extras: [], overrides: [], paid: [], deferred: [] },
   };
 
   it("recurs on its own anchor", () => {
@@ -153,6 +164,8 @@ describe("months that don't go as agreed", () => {
       last: "",
       extras: [],
       overrides: [],
+      paid: [],
+      deferred: [],
     },
   };
 
@@ -215,6 +228,8 @@ describe("months that don't go as agreed", () => {
         last: "",
         extras: [],
         overrides: [{ month: "2026-02", amount: 20 }],
+        paid: [],
+        deferred: [],
       },
     };
     expect(quarterly.reimb!.freq).toBe("quarterly");
@@ -234,6 +249,8 @@ describe("months that don't go as agreed", () => {
         last: "2026-06",
         extras: [],
         overrides: [{ month: "2026-09", amount: 40 }],
+        paid: [],
+        deferred: [],
       },
     };
     expect(reimbEnd(ended)).toBe(M("2026-09"));
@@ -243,6 +260,102 @@ describe("months that don't go as agreed", () => {
       reimb: { ...ended.reimb!, overrides: [{ month: "2026-09", amount: 0 }] },
     };
     expect(reimbEnd(skipped)).toBe(M("2026-06"));
+  });
+});
+
+describe("confirming a month, and holding one over", () => {
+  const base20: Item = {
+    ...base,
+    last: "",
+    reimb: {
+      who: "Sara",
+      amount: 20,
+      freq: "monthly",
+      first: "2026-01",
+      last: "",
+      extras: [],
+      overrides: [],
+      paid: [],
+      deferred: [],
+    },
+  };
+
+  it("confirming a month changes no figure", () => {
+    const it0: Item = { ...base20, reimb: { ...base20.reimb!, paid: ["2026-03"] } };
+    expect(isPaid(it0, M("2026-03"))).toBe(true);
+    expect(isPaid(it0, M("2026-04"))).toBe(false);
+    // the plan already assumed it arrived, so nothing moves
+    expect(reimbInMonth(it0, M("2026-03"))).toBe(20);
+  });
+
+  it("holding a month over empties it and doubles the next", () => {
+    const it0: Item = { ...base20, reimb: { ...base20.reimb!, deferred: ["2026-03"] } };
+    expect(reimbInMonth(it0, M("2026-02"))).toBe(20);
+    expect(reimbInMonth(it0, M("2026-03"))).toBe(0);
+    expect(reimbInMonth(it0, M("2026-04"))).toBe(40);
+    expect(reimbInMonth(it0, M("2026-05"))).toBe(20);
+    // nothing is lost along the way
+    expect(reimbBetween(it0, M("2026-01"), M("2026-05"))).toBe(100);
+  });
+
+  it("lands two held-over months together in the third", () => {
+    const it0: Item = {
+      ...base20,
+      reimb: { ...base20.reimb!, deferred: ["2026-03", "2026-04"] },
+    };
+    expect(reimbInMonth(it0, M("2026-03"))).toBe(0);
+    expect(reimbInMonth(it0, M("2026-04"))).toBe(0);
+    expect(reimbInMonth(it0, M("2026-05"))).toBe(60);
+    expect(reimbBetween(it0, M("2026-01"), M("2026-05"))).toBe(100);
+  });
+
+  it("carries a held-over month past the agreed end rather than losing it", () => {
+    const ending: Item = {
+      ...base,
+      last: "",
+      reimb: {
+        who: "Sara",
+        amount: 20,
+        freq: "monthly",
+        first: "2026-01",
+        last: "2026-06",
+        extras: [],
+        overrides: [],
+        paid: [],
+        deferred: ["2026-06"],
+      },
+    };
+    expect(reimbInMonth(ending, M("2026-06"))).toBe(0);
+    expect(reimbInMonth(ending, M("2026-07"))).toBe(20);
+    expect(reimbEnd(ending)).toBe(M("2026-07"));
+  });
+
+  it("lets an override overrule a hold-over, since it says what turned up", () => {
+    const it0: Item = {
+      ...base20,
+      reimb: {
+        ...base20.reimb!,
+        deferred: ["2026-03"],
+        overrides: [{ month: "2026-03", amount: 12 }],
+      },
+    };
+    expect(isDeferred(it0, M("2026-03"))).toBe(false);
+    expect(reimbInMonth(it0, M("2026-03"))).toBe(12);
+    // and nothing travels to April, because nothing was held over
+    expect(reimbInMonth(it0, M("2026-04"))).toBe(20);
+  });
+
+  it("keeps a lump sum on top of a held-over month", () => {
+    const it0: Item = {
+      ...base20,
+      reimb: {
+        ...base20.reimb!,
+        deferred: ["2026-03"],
+        extras: [{ month: "2026-03", amount: 90 }],
+      },
+    };
+    expect(reimbInMonth(it0, M("2026-03"))).toBe(90);
+    expect(reimbInMonth(it0, M("2026-04"))).toBe(40);
   });
 });
 
