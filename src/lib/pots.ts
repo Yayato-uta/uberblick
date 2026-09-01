@@ -1,5 +1,6 @@
 import type { Item, Pot, Purchase } from "../types";
-import { fromYM, occursIn, shortLabel } from "./month";
+import { fromYM, shortLabel } from "./month";
+import { amountIn, touchesMonth } from "./actual";
 
 /* Envelope arithmetic. The only rule that matters: what you don't spend stays
    in the pot. A month's available money is last month's leftover plus this
@@ -24,13 +25,13 @@ export function fundedIn(pot: Pot, idx: number): boolean {
 /** The scheduled expenses drawn from this pot in month `idx`. */
 export function drawsIn(pot: Pot, items: Item[], idx: number): Item[] {
   return items.filter(
-    (it) => it.kind === "expense" && paidFrom(it) === pot.id && occursIn(it, idx),
+    (it) => it.kind === "expense" && paidFrom(it) === pot.id && touchesMonth(it, idx),
   );
 }
 
-/** What those scheduled expenses come to. */
+/** What those expenses actually came to that month. */
 export const drawnIn = (pot: Pot, items: Item[], idx: number): number =>
-  drawsIn(pot, items, idx).reduce((t, it) => t + it.amount, 0);
+  drawsIn(pot, items, idx).reduce((t, it) => t + amountIn(it, idx), 0);
 
 /** What goes into the pot in month `idx`. */
 export const allocatedIn = (pot: Pot, idx: number): number =>

@@ -67,6 +67,11 @@ function normItem(raw: unknown): Item | null {
     const reimb = normReimb(raw.reimb, item);
     if (reimb) item.reimb = reimb;
   }
+  const paidMonths = normMonths(raw.paid);
+  if (paidMonths.length) item.paid = paidMonths;
+  const actuals = normOverrides(raw.actuals);
+  if (actuals.length) item.actuals = actuals;
+
   if (kind === "expense") {
     /* Absent means the account. `fund` is what an earlier build of this app
        called the same field when it could only point at an asset. */

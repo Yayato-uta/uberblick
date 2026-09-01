@@ -266,3 +266,71 @@ describe("a repayment that stops before the expense does", () => {
   });
 });
 
+
+describe("what a month actually did", () => {
+  it("spends the recorded amount, not the usual one", () => {
+    const rows = forecast({
+      items: [
+        item({ name: "Salary", kind: "income", amount: 2000 }),
+        item({
+          name: "Strom",
+          kind: "expense",
+          amount: 200,
+          actuals: [{ month: "2026-09", amount: 265 }],
+        }),
+      ],
+      opening: 0,
+      odRate: 0,
+      horizon: 3,
+      start: START,
+    });
+
+    expect(rows[0].expense).toBe(200);
+    expect(rows[1].expense).toBe(265);
+    expect(rows[2].expense).toBe(200);
+  });
+
+  it("counts a bill that turned up in a month nothing was due", () => {
+    const rows = forecast({
+      items: [
+        item({
+          name: "Versicherung",
+          kind: "expense",
+          amount: 300,
+          freq: "yearly",
+          first: "2026-08",
+          actuals: [{ month: "2026-09", amount: 45 }],
+        }),
+      ],
+      opening: 0,
+      odRate: 0,
+      horizon: 3,
+      start: START,
+    });
+
+    expect(rows[1].expense).toBe(45);
+    expect(rows[1].hits.map((i) => i.id)).toContain("Versicherung");
+  });
+
+  it("draws the recorded amount out of the fund it is paid from", () => {
+    const rows = forecast({
+      items: [
+        item({
+          name: "Möbel",
+          kind: "expense",
+          amount: 400,
+          from: "reserve",
+          actuals: [{ month: "2026-09", amount: 640 }],
+        }),
+      ],
+      opening: 0,
+      odRate: 0,
+      horizon: 2,
+      start: START,
+    });
+
+    // never touches the account either way
+    expect(rows[1].expense).toBe(0);
+    expect(rows[1].spends.map((s) => s.amount)).toEqual([640]);
+  });
+});

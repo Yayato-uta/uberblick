@@ -236,6 +236,32 @@ export default function App() {
       }),
     }));
 
+  /** Tick a line off as actually paid in one month, or take the mark off. */
+  const setItemPaid = (itemId: string, month: string, on: boolean) =>
+    update((prev) => ({
+      ...prev,
+      sample: false,
+      items: prev.items.map((it) => {
+        if (it.id !== itemId) return it;
+        const rest = (it.paid ?? []).filter((m) => m !== month);
+        const paid = on ? [...rest, month].sort() : rest;
+        return paid.length ? { ...it, paid } : stripKey(it, "paid");
+      }),
+    }));
+
+  /** Record what actually went out in one month; null puts the usual amount back. */
+  const setItemActual = (itemId: string, month: string, amount: number | null) =>
+    update((prev) => ({
+      ...prev,
+      sample: false,
+      items: prev.items.map((it) => {
+        if (it.id !== itemId) return it;
+        const rest = (it.actuals ?? []).filter((a) => a.month !== month);
+        const actuals = amount === null ? rest : [...rest, { month, amount }];
+        return actuals.length ? { ...it, actuals } : stripKey(it, "actuals");
+      }),
+    }));
+
   /* ── budget pots ── */
 
   const addPot = (p: Omit<Pot, "id">) =>
@@ -445,7 +471,15 @@ export default function App() {
         <DesktopTabs tab={tab} onPick={setTab} counts={counts} />
 
         {tab === "overview" && <Overview data={data} d={d} update={update} />}
-        {tab === "month" && <MonthByMonth d={d} k={monthK} setK={setMonthK} />}
+        {tab === "month" && (
+          <MonthByMonth
+            d={d}
+            k={monthK}
+            setK={setMonthK}
+            onSetPaid={setItemPaid}
+            onSetActual={setItemActual}
+          />
+        )}
         {tab === "pots" && (
           <Pots
             d={d}

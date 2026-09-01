@@ -2,6 +2,7 @@ import type { Asset, Data, Goal, Item, Pot, Purchase, ReimbExtra } from "../type
 import { FREQ } from "./constants";
 import { avgOf, forecast, sumOf, type MonthRow, type Spend } from "./forecast";
 import { countOccurrences, fromYM, nowIdx, occursIn, shortLabel } from "./month";
+import { amountIn } from "./actual";
 import {
   carriedInto,
   creditAt,
@@ -333,7 +334,7 @@ export function derive(
     if (stop !== null && iEnd !== null && iEnd > stop) {
       for (let i = stop + 1; i <= iEnd; i++) {
         if (occursIn(it, i)) {
-          alone += it.amount;
+          alone += amountIn(it, i);
           aloneMonths++;
         }
       }
@@ -428,7 +429,7 @@ export function derive(
     const lastIdx = fromYM(it.last);
     if (lastIdx === null || lastIdx < start) return s;
     let t = 0;
-    for (let i = start; i <= lastIdx; i++) if (occursIn(it, i)) t += it.amount;
+    for (let i = start; i <= lastIdx; i++) if (occursIn(it, i)) t += amountIn(it, i);
     // repayments can outlast the expense, so net them off over the longer span
     const until = Math.max(lastIdx, reimbEnd(it) ?? lastIdx);
     t -= reimbBetween(it, start, until);
@@ -487,7 +488,7 @@ export function derive(
       let paymentsLeft = 0;
       for (let i = start; i <= lastIdx; i++) {
         if (occursIn(it, i)) {
-          remaining += it.amount;
+          remaining += amountIn(it, i);
           paymentsLeft++;
         }
       }
@@ -533,7 +534,7 @@ export function derive(
       if (iEnd !== null) {
         for (let i = rEnd + 1; i <= iEnd; i++) {
           if (occursIn(it, i)) {
-            total += it.amount;
+            total += amountIn(it, i);
             n++;
           }
         }

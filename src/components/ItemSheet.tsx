@@ -103,9 +103,8 @@ export function ItemSheet({
   const [touched, setTouched] = useState(false);
   /* The month-by-month record lives on Paid back to me; editing the agreement
      here must not wipe it. */
-  const originalReimb = draft?.id
-    ? allItems.find((i) => i.id === draft.id)?.reimb
-    : undefined;
+  const original = draft?.id ? allItems.find((i) => i.id === draft.id) : undefined;
+  const originalReimb = original?.reimb;
 
   // re-seed whenever a different row is opened
   const [seed, setSeed] = useState(draft);
@@ -135,6 +134,10 @@ export function ItemSheet({
       first: f.first,
       last: f.last || "",
     };
+    /* What the line actually did month by month is recorded on Month by month;
+       changing the agreement here must not erase it. */
+    if (original?.paid?.length) item.paid = original.paid;
+    if (original?.actuals?.length) item.actuals = original.actuals;
     const sources = [...pots.map((p) => p.id), ...assets.map((a) => a.id)];
     if (f.kind === "expense" && f.from && sources.includes(f.from)) {
       item.from = f.from;

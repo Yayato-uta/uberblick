@@ -1,5 +1,9 @@
 import {
+  Children,
+  cloneElement,
   forwardRef,
+  isValidElement,
+  useId,
   useEffect,
   useRef,
   useState,
@@ -70,9 +74,21 @@ export const cx = (...parts: Array<string | false | null | undefined>): string =
 
 /* ── type ── */
 
-export function Label({ children, as = "div" }: { children: ReactNode; as?: "div" | "span" }) {
+export function Label({
+  children,
+  as = "div",
+  htmlFor,
+}: {
+  children: ReactNode;
+  as?: "div" | "span" | "label";
+  htmlFor?: string;
+}) {
   const Tag = as;
-  return <Tag className="u-label mb-1 block">{children}</Tag>;
+  return (
+    <Tag className="u-label mb-1 block" htmlFor={htmlFor}>
+      {children}
+    </Tag>
+  );
 }
 
 export function Figure({
@@ -245,6 +261,11 @@ export function IconBtn({
   );
 }
 
+/**
+ * A labelled control. The label is tied to the control it wraps, so a screen
+ * reader announces "Amount each time" rather than an unnamed text box, and
+ * tapping the words puts the cursor in the field.
+ */
 export function Field({
   label,
   children,
@@ -256,10 +277,21 @@ export function Field({
   hint?: ReactNode;
   wide?: boolean;
 }) {
+  const id = useId();
+  /* Fields hold one control. Give it the id the label points at, unless it
+     brought its own or isn't a plain element (MonthField opens a sheet). */
+  const kids = Children.toArray(children);
+  const only = kids.length === 1 ? kids[0] : null;
+  const control =
+    only !== null && isValidElement<{ id?: string }>(only) && only.props.id === undefined
+      ? cloneElement(only, { id })
+      : children;
   return (
     <div className={wide ? "sm:col-span-2" : undefined}>
-      <Label>{label}</Label>
-      {children}
+      <Label as="label" htmlFor={id}>
+        {label}
+      </Label>
+      {control}
       {hint && <div className="mt-1 text-xs text-soft">{hint}</div>}
     </div>
   );

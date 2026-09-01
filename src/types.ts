@@ -11,12 +11,15 @@ export type Horizon = 12 | 18 | 24;
 /** "YYYY-MM", or "" where an open end is allowed. */
 export type YM = string;
 
-/** A lump sum somebody drops in on top of the regular rate. */
-export interface ReimbExtra {
+/** An amount pinned to one month. */
+export interface MonthAmount {
   /** "YYYY-MM" */
   month: YM;
   amount: number;
 }
+
+/** A lump sum somebody drops in on top of the regular rate. */
+export type ReimbExtra = MonthAmount;
 
 /**
  * A repayment runs on its OWN clock — it is not tied to the expense it covers.
@@ -87,6 +90,17 @@ export interface Item {
    * funding is what shows in the cash flow; an asset is simply drawn down.
    */
   from?: string;
+  /**
+   * Months this line was confirmed as actually paid. Like the repayment record,
+   * it moves no figure — the plan already assumed it went out — it separates
+   * "due, and I've seen it" from "due, and I haven't".
+   */
+  paid?: YM[];
+  /**
+   * What actually left the account in a given month, instead of the usual
+   * amount. The bill that came in higher, or the month it was skipped.
+   */
+  actuals?: MonthAmount[];
 }
 
 export interface Goal {

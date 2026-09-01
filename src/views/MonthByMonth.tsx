@@ -1,30 +1,40 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CalendarClock,
+  Check,
   ChevronLeft,
   ChevronRight,
   PiggyBank,
+  Pencil,
   Repeat,
   ShoppingBasket,
+  X,
   Zap,
 } from "lucide-react";
 import type { Item } from "../types";
 import type { Derived } from "../lib/derive";
 import { FREQ } from "../lib/constants";
-import { eur } from "../lib/format";
-import { fromYM, fullLabel, occursIn } from "../lib/month";
+import { eur, parsePos } from "../lib/format";
+import { fromYM, fullLabel, toYM } from "../lib/month";
 import { reimbInMonth, reimbSchedule } from "../lib/reimb";
 import { allocatedIn, paidFrom } from "../lib/pots";
-import { BORDER_T, Empty, Stat, TEXT, cx, type Tone } from "../components/ui";
+import { actualFor, amountIn, isItemPaid, touchesMonth } from "../lib/actual";
+import { BORDER_T, Btn, Empty, Stat, TextInput, TEXT, cx, type Tone } from "../components/ui";
 
 export function MonthByMonth({
   d,
   k,
   setK,
+  onSetPaid,
+  onSetActual,
 }: {
   d: Derived;
   k: number;
   setK: (k: number) => void;
+  /** tick a line off as actually paid in this month */
+  onSetPaid: (itemId: string, month: string, on: boolean) => void;
+  /** record what actually went out; null puts the usual amount back */
+  onSetActual: (itemId: string, month: string, amount: number | null) => void;
 }) {
   const fundName = (id: string | undefined) =>
     id ? d.assets.find((a) => a.id === id)?.name : undefined;
@@ -44,7 +54,7 @@ export function MonthByMonth({
 
   const exp = M.hits.filter((i) => i.kind === "expense" && !paidFrom(i));
   const fromPots = M.hits.filter(
-    (i) => i.kind === "expense" && paidFrom(i) && occursIn(i, M.idx),
+    (i) => i.kind === "expense" && paidFrom(i) && touchesMonth(i, M.idx),
   );
   const every = exp.filter((i) => i.freq === "monthly");
   const periodic = exp.filter((i) => ["quarterly", "semiannual", "yearly"].includes(i.freq));
@@ -61,7 +71,7 @@ export function MonthByMonth({
   const barShare = Math.min(100, Math.max(0, share));
   const overCovered = yours < -0.5;
   const irregularYours = [...periodic, ...once].reduce(
-    (s, i) => s + (occursIn(i, M.idx) ? i.amount : 0) - reimbInMonth(i, M.idx),
+    (s, i) => s + amountIn(i, M.idx) - reimbInMonth(i, M.idx),
     0,
   );
 
@@ -176,6 +186,8 @@ export function MonthByMonth({
         idx={M.idx}
         icon={Repeat}
         tone="red"
+        onSetPaid={onSetPaid}
+        onSetActual={onSetActual}
       />
       <BreakdownGroup
         title="Periodic — falls due this month"
@@ -184,6 +196,8 @@ export function MonthByMonth({
         idx={M.idx}
         icon={CalendarClock}
         tone="ochre"
+        onSetPaid={onSetPaid}
+        onSetActual={onSetActual}
       />
       <BreakdownGroup
         title="One-time only"
@@ -192,6 +206,8 @@ export function MonthByMonth({
         idx={M.idx}
         icon={Zap}
         tone="blue"
+        onSetPaid={onSetPaid}
+        onSetActual={onSetActual}
       />
 
       {(income.length > 0 || saving.length > 0) && (
@@ -344,6 +360,8 @@ function BreakdownGroup({
   idx,
   icon: Icon,
   tone,
+  onSetPaid,
+  onSetActual,
 }: {
   title: string;
   note?: string;
@@ -352,9 +370,11 @@ function BreakdownGroup({
   idx: number;
   icon: typeof Repeat;
   tone: Tone;
+  onSetPaid: (itemId: string, month: string, on: boolean) => void;
+  onSetActual: (itemId: string, month: string, amount: number | null) => void;
 }) {
   if (!rows.length) return null;
-  const gross = rows.reduce((s, i) => s + (occursIn(i, idx) ? i.amount : 0), 0);
+  const gross = rows.reduce((s, i) => s + amountIn(i, idx), 0);
   const back = rows.reduce((s, i) => s + reimbInMonth(i, idx), 0);
 
   return (
@@ -376,7 +396,13 @@ function BreakdownGroup({
       </div>
 
       {rows.map((it) => (
-        <BreakdownRow key={it.id} it={it} idx={idx} />
+        <BreakdownRow
+          key={it.id}
+          it={it}
+          idx={idx}
+          onSetPaid={onSetPaid}
+          onSetActual={onSetActual}
+        />
       ))}
 
       <div className="bg-paper px-3 py-2 sm:flex sm:gap-3">
@@ -404,21 +430,44 @@ function BreakdownGroup({
 
 /* A repayment runs on its own clock, so a line can be here with money coming
    back and nothing going out — a one-off paid months ago, still being repaid. */
-function BreakdownRow({ it, idx }: { it: Item; idx: number }) {
-  const due = occursIn(it, idx);
+function BreakdownRow({
+  it,
+  idx,
+  onSetPaid,
+  onSetActual,
+}: {
+  it: Item;
+  idx: number;
+  onSetPaid: (itemId: string, month: string, on: boolean) => void;
+  onSetActual: (itemId: string, month: string, amount: number | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const month = toYM(idx);
+  const due = touchesMonth(it, idx);
+  const actual = actualFor(it, idx);
+  const ticked = isItemPaid(it, idx);
   const back = reimbInMonth(it, idx);
-  const gross = due ? it.amount : 0;
+  const gross = amountIn(it, idx);
   const yours = gross - back;
   const full = back > 0 && yours <= 0.01;
   const sched = reimbSchedule(it);
   const lump = !!sched && sched.extras.some((e) => fromYM(e.month) === idx);
 
+  const save = () => {
+    onSetActual(it.id, month, parsePos(draft));
+    setEditing(false);
+  };
+
   return (
-    <div className="border-b border-rule px-3 py-2 sm:flex sm:items-center sm:gap-3">
+    <div className="border-b border-rule px-3 py-2">
+      <div className="sm:flex sm:items-center sm:gap-3">
       <div className="min-w-0 flex-1">
         <div className="text-sm">
           {it.name}
           {!due && <span className="font-mono text-xs text-ochre"> · repayment only</span>}
+          {ticked && <span className="font-mono text-xs text-green"> · paid ✓</span>}
         </div>
         <div className="font-mono text-xs text-soft">
           {it.cat}
@@ -444,6 +493,61 @@ function BreakdownRow({ it, idx }: { it: Item; idx: number }) {
           tone={yours > 0.01 ? "red" : "soft"}
         />
       </div>
+      </div>
+
+      {/* what this line actually did this month */}
+      {editing ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="u-label">Actually</span>
+          <div className="w-24">
+            <TextInput
+              inputMode="decimal"
+              autoFocus
+              value={draft}
+              placeholder="€"
+              aria-label={`What ${it.name} actually came to in ${fullLabel(idx)}`}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && save()}
+            />
+          </div>
+          <Btn tone="solid" onClick={save}>
+            <Check size={13} /> Save
+          </Btn>
+          <Btn onClick={() => setEditing(false)}>Cancel</Btn>
+        </div>
+      ) : (
+        <div className="mt-1.5">
+          {actual !== null && (
+            <div className="mb-1 font-mono text-xs text-ochre">
+              {eur(actual)} instead of {eur(it.amount)} — recorded for this month
+            </div>
+          )}
+          <div className="flex flex-wrap gap-1">
+            {actual === null && (
+              <Btn
+                tone={ticked ? "solid" : undefined}
+                aria-pressed={ticked}
+                onClick={() => onSetPaid(it.id, month, !ticked)}
+              >
+                <Check size={12} /> Paid
+              </Btn>
+            )}
+            <Btn
+              onClick={() => {
+                setDraft(actual !== null ? String(actual) : String(it.amount));
+                setEditing(true);
+              }}
+            >
+              <Pencil size={12} /> {actual !== null ? "Change" : "Different"}
+            </Btn>
+            {actual !== null && (
+              <Btn onClick={() => onSetActual(it.id, month, null)}>
+                <X size={12} /> Undo
+              </Btn>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

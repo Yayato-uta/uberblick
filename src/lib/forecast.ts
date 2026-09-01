@@ -1,7 +1,8 @@
 import type { Item, Pot } from "../types";
-import { occursIn, shortLabel } from "./month";
+import { shortLabel } from "./month";
 import { reimbInMonth } from "./reimb";
 import { allocatedTotal, paidFrom } from "./pots";
+import { amountIn, touchesMonth } from "./actual";
 
 /** Money paid out of a fund rather than out of the current account. */
 export interface Spend {
@@ -110,7 +111,10 @@ export function forecast({
 
     for (const it of items) {
       const back = it.kind === "expense" ? reimbInMonth(it, idx) : 0;
-      const due = occursIn(it, idx);
+      /* "Due" now means the month touches this line at all: the schedule says
+         so, or a recorded amount says it happened anyway. */
+      const due = touchesMonth(it, idx);
+      const amount = amountIn(it, idx);
       if (!due && back === 0) continue;
 
       /* An expense paid from a pot or a fund never reaches the current account,
@@ -123,13 +127,13 @@ export function forecast({
           /* A pot and an asset are both "not the account", but they are shown
              in different places and must not be listed twice: a pot draw is
              counted here, an asset draw goes on the spends list. */
-          if (potIds.has(source)) potSpend += it.amount;
+          if (potIds.has(source)) potSpend += amount;
           else
             drawn.push({
               idx,
               id: it.id,
               name: it.name,
-              amount: it.amount,
+              amount,
               from: "fund",
               assetId: source,
             });
@@ -145,12 +149,12 @@ export function forecast({
         continue;
       }
       if (it.kind === "income") {
-        income += it.amount;
+        income += amount;
       } else if (it.kind === "saving") {
-        saving += it.amount;
+        saving += amount;
       } else {
-        expense += it.amount;
-        if (it.freq !== "monthly") irregular += it.amount;
+        expense += amount;
+        if (it.freq !== "monthly") irregular += amount;
         reimb += back;
       }
     }

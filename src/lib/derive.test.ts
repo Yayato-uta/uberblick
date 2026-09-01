@@ -1239,3 +1239,92 @@ describe("the repayment record, month by month", () => {
   });
 });
 
+describe("recording what an expense actually did", () => {
+  const strom = item({
+    id: "strom",
+    name: "Strom & Gas",
+    kind: "expense",
+    amount: 218,
+    freq: "quarterly",
+    first: toYM(START),
+    last: toYM(START + 11),
+  });
+
+  it("takes a higher bill into the month it landed, and nowhere else", () => {
+    const d = derive(
+      plan({
+        horizon: 12,
+        opening: 0,
+        items: [item({ ...strom, actuals: [{ month: toYM(START + 3), amount: 265 }] })],
+      }),
+      START,
+    );
+    expect(d.months[0].expense).toBe(218);
+    expect(d.months[3].expense).toBe(265);
+    expect(d.months[6].expense).toBe(218);
+    // and the balance follows what actually happened
+    expect(d.months[3].balance).toBe(-(218 + 265));
+  });
+
+  it("counts money that went out in a month the schedule skipped", () => {
+    const d = derive(
+      plan({
+        horizon: 12,
+        opening: 0,
+        items: [item({ ...strom, actuals: [{ month: toYM(START + 1), amount: 90 }] })],
+      }),
+      START,
+    );
+    expect(d.months[1].expense).toBe(90);
+    expect(d.months[1].hits.map((i) => i.id)).toEqual(["strom"]);
+  });
+
+  it("changes no figure when a month is merely ticked off", () => {
+    const plain = derive(plan({ horizon: 12, opening: 0, items: [strom] }), START);
+    const ticked = derive(
+      plan({ horizon: 12, opening: 0, items: [item({ ...strom, paid: [toYM(START)] })] }),
+      START,
+    );
+    expect(ticked.months[0].expense).toBe(plain.months[0].expense);
+    expect(ticked.netCost).toBeCloseTo(plain.netCost, 6);
+  });
+
+  it("carries a recorded amount into what is still left to pay", () => {
+    const d = derive(
+      plan({
+        horizon: 12,
+        items: [item({ ...strom, actuals: [{ month: toYM(START), amount: 300 }] })],
+      }),
+      START,
+    );
+    // four quarterly bills, the first of which actually came to 300
+    expect(d.ending[0].remaining).toBe(300 + 218 * 3);
+  });
+
+  it("draws the real amount out of a pot when the line is paid from one", () => {
+    const d = derive(
+      plan({
+        horizon: 12,
+        pots: [
+          {
+            id: "haus",
+            name: "Haus",
+            kind: "spending",
+            monthly: 300,
+            balance: 0,
+            first: toYM(START),
+            last: "",
+          },
+        ],
+        items: [
+          item({ ...strom, from: "haus", actuals: [{ month: toYM(START), amount: 265 }] }),
+        ],
+      }),
+      START,
+    );
+    expect(d.months[0].potSpend).toBe(265);
+    expect(d.potRows[0].spent).toBe(265);
+    expect(d.potRows[0].left).toBe(35);
+  });
+});
+
