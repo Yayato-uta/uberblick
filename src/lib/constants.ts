@@ -6,10 +6,23 @@ import {
   TrendingUp,
   type LucideIcon,
 } from "lucide-react";
-import type { AssetKind, Data, Freq, Item, Kind, Pot, PotKind, Purchase } from "../types";
+import type {
+  AssetKind,
+  Data,
+  Freq,
+  Item,
+  Kind,
+  Pot,
+  PotKind,
+  Purchase,
+  Snapshot,
+  StockBook,
+  StockFacts,
+} from "../types";
 import { nowIdx, toYM } from "./month";
 import { uid } from "./format";
 import { LIGHT, type Palette } from "./palette";
+import { DEFAULT_ASSUMPTIONS, isoWeek } from "./valuation";
 
 export const KIND: Record<Kind, { label: string; tone: keyof Palette }> = {
   expense: { label: "Expense", tone: "red" },
@@ -75,7 +88,7 @@ export const THEME_KEY = "uberblick:theme";
 export const LAST_EXPORT_KEY = "uberblick:last-export";
 export const INSTALL_HINT_KEY = "uberblick:ios-hint-seen";
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** An empty plan — what "Start empty" leaves you with. */
 export function emptyData(): Data {
@@ -90,8 +103,14 @@ export function emptyData(): Data {
     odRate: 0,
     horizon: 12,
     sample: false,
+    stocks: emptyStockBook(),
     schemaVersion: SCHEMA_VERSION,
   };
+}
+
+/** An unused stock screen: the assumptions, and no week of figures yet. */
+export function emptyStockBook(): StockBook {
+  return { snapshots: [], assumptions: { ...DEFAULT_ASSUMPTIONS }, shortlist: 5 };
 }
 
 /**
@@ -153,6 +172,94 @@ export function samplePots(): { pots: Pot[]; purchases: Purchase[] } {
   };
 }
 
+/**
+ * A week of figures for eight companies that do not exist.
+ *
+ * The screen is worthless without a list to rank, and an empty screen teaches
+ * nothing — but an illustration made of REAL tickers would be a set of stale
+ * figures wearing the name of a company somebody could go and buy. So these
+ * are invented, plainly labelled as invented, and chosen to put every case the
+ * screen has to handle on one page at once: a sound business going cheap, a
+ * fine business at a dear price, a profitable one that is cheap because it is
+ * quietly failing, one losing money that no model will value at all, a
+ * cyclical at what looks like a bargain right as its revenue turns down, and
+ * one with half its figures missing.
+ *
+ * Figures are in euro, per share where the field says per share, absolute
+ * where it doesn't. Every company has 100 million shares, which makes the
+ * arithmetic easy to check by hand.
+ */
+export function sampleFacts(): StockFacts[] {
+  const co = (
+    ticker: string,
+    name: string,
+    sector: string,
+    rest: Omit<StockFacts, "ticker" | "name" | "sector" | "currency" | "shares">,
+  ): StockFacts => ({ ticker, name, sector, currency: "EUR", shares: 100_000_000, ...rest });
+
+  return [
+    co("EXA", "Example Industrials", "Industrials", {
+      price: 42, eps: 5.6, bookValue: 38, revenuePerShare: 61, dividend: 1.9,
+      freeCashFlow: 520_000_000, ebit: 760_000_000, ebitda: 1_010_000_000,
+      totalDebt: 900_000_000, cash: 610_000_000, equity: 3_800_000_000,
+      roe: 0.15, epsGrowth: 0.05, revenueGrowth: 0.03,
+    }),
+    co("EXB", "Example Software", "Technology", {
+      price: 168, eps: 3.4, bookValue: 14, revenuePerShare: 21, dividend: 0,
+      freeCashFlow: 480_000_000, ebit: 520_000_000, ebitda: 610_000_000,
+      totalDebt: 120_000_000, cash: 1_400_000_000, equity: 2_200_000_000,
+      roe: 0.26, epsGrowth: 0.18, revenueGrowth: 0.15,
+    }),
+    co("EXC", "Example Retail Group", "Consumer", {
+      price: 9.4, eps: 0.75, bookValue: 22, revenuePerShare: 88, dividend: 0.6,
+      freeCashFlow: 40_000_000, ebit: 190_000_000, ebitda: 430_000_000,
+      totalDebt: 2_600_000_000, cash: 180_000_000, equity: 2_200_000_000,
+      roe: 0.03, epsGrowth: -0.12, revenueGrowth: -0.04,
+    }),
+    co("EXD", "Example Biotech", "Healthcare", {
+      price: 27, eps: -1.9, bookValue: 6.2, revenuePerShare: 2.1, dividend: 0,
+      freeCashFlow: -210_000_000, ebit: -240_000_000, ebitda: -190_000_000,
+      totalDebt: 50_000_000, cash: 640_000_000, equity: 620_000_000,
+      roe: -0.31, epsGrowth: null, revenueGrowth: 0.42,
+    }),
+    co("EXE", "Example Energy", "Energy", {
+      price: 51, eps: 9.8, bookValue: 62, revenuePerShare: 140, dividend: 3.5,
+      freeCashFlow: 720_000_000, ebit: 1_350_000_000, ebitda: 2_100_000_000,
+      totalDebt: 1_800_000_000, cash: 1_500_000_000, equity: 6_200_000_000,
+      roe: 0.16, epsGrowth: -0.2, revenueGrowth: -0.11,
+    }),
+    co("EXF", "Example Utilities", "Utilities", {
+      price: 33, eps: 2.4, bookValue: 29, revenuePerShare: 41, dividend: 1.7,
+      freeCashFlow: 90_000_000, ebit: 640_000_000, ebitda: 1_100_000_000,
+      totalDebt: 4_200_000_000, cash: 300_000_000, equity: 2_900_000_000,
+      roe: 0.083, epsGrowth: 0.02, revenueGrowth: 0.03,
+    }),
+    co("EXG", "Example Logistics", "Industrials", {
+      price: 18.5, eps: 1.55, bookValue: 11.4, revenuePerShare: null, dividend: 0,
+      freeCashFlow: null, ebit: 78_000_000, ebitda: 118_000_000,
+      totalDebt: 210_000_000, cash: 95_000_000, equity: 640_000_000,
+      roe: 0.14, epsGrowth: 0.09, revenueGrowth: null,
+    }),
+    co("EXH", "Example Consumer Brands", "Consumer", {
+      price: 76, eps: 3.9, bookValue: 18, revenuePerShare: 55, dividend: 2.1,
+      freeCashFlow: 400_000_000, ebit: 560_000_000, ebitda: 700_000_000,
+      totalDebt: 900_000_000, cash: 250_000_000, equity: 1_800_000_000,
+      roe: 0.21, epsGrowth: 0.07, revenueGrowth: 0.05,
+    }),
+  ];
+}
+
+/** The illustration, stamped with the week it is being looked at. */
+export function sampleSnapshot(now: Date = new Date()): Snapshot {
+  return {
+    week: isoWeek(now),
+    takenAt: now.toISOString(),
+    source: "invented figures shipped with the app",
+    sample: true,
+    facts: sampleFacts(),
+  };
+}
+
 export function sampleData(): Data {
   const { pots, purchases } = samplePots();
   return {
@@ -163,5 +270,6 @@ export function sampleData(): Data {
     opening: -1000,
     overdraft: 5000,
     sample: true,
+    stocks: { ...emptyStockBook(), snapshots: [sampleSnapshot()] },
   };
 }

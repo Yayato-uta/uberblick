@@ -1,21 +1,46 @@
-const cache = new Map<number, Intl.NumberFormat>();
+const cache = new Map<string, Intl.NumberFormat>();
 
-function fmt(dp: number): Intl.NumberFormat {
-  let f = cache.get(dp);
+function fmt(dp: number, currency: string): Intl.NumberFormat {
+  const key = `${currency}:${dp}`;
+  let f = cache.get(key);
   if (!f) {
     f = new Intl.NumberFormat("de-AT", {
       style: "currency",
-      currency: "EUR",
+      currency,
       minimumFractionDigits: dp,
       maximumFractionDigits: dp,
     });
-    cache.set(dp, f);
+    cache.set(key, f);
   }
   return f;
 }
 
 /** Euro, de-AT, no decimals unless asked for. */
-export const eur = (n: number, dp = 0): string => fmt(dp).format(Number.isFinite(n) ? n : 0);
+export const eur = (n: number, dp = 0): string => fmt(dp, "EUR").format(Number.isFinite(n) ? n : 0);
+
+/**
+ * The same, in somebody else's currency. Only the stock screen needs this:
+ * a share price is quoted in whatever the exchange trades in, and converting
+ * it to euro at a rate nobody recorded would be inventing a figure. An
+ * unrecognised code falls back to printing the code beside the number rather
+ * than throwing.
+ */
+export function money(n: number, currency: string, dp = 2): string {
+  const v = Number.isFinite(n) ? n : 0;
+  try {
+    return fmt(dp, currency || "EUR").format(v);
+  } catch {
+    return `${v.toFixed(dp).replace(".", ",")} ${currency}`;
+  }
+}
+
+/** A fraction as a percentage: 0.134 -> "13,4%". Null stays a dash. */
+export const asPct = (n: number | null, dp = 1): string =>
+  n === null || !Number.isFinite(n) ? "—" : `${(n * 100).toFixed(dp).replace(".", ",")}%`;
+
+/** The same, with a sign always shown — for a change rather than a level. */
+export const asDelta = (n: number | null, dp = 1): string =>
+  n === null || !Number.isFinite(n) ? "—" : `${n >= 0 ? "+" : ""}${asPct(n, dp)}`;
 
 /** Compact axis labels: 1.2k, -6k. */
 export const eurAxis = (n: number): string => {

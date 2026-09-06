@@ -186,5 +186,102 @@ export interface Data {
   horizon: Horizon;
   /** true while the seed data is still on screen */
   sample: boolean;
+  /**
+   * The weekly stock screen. Backups written before schema 2 have no `stocks`
+   * key at all and get the defaults filled in on import, the same way `goals`
+   * and `assets` were filled in for the backups written before those existed.
+   */
+  stocks: StockBook;
   schemaVersion: number;
+}
+
+/* ── the weekly stock screen ────────────────────────────────────────────────
+   Added in schema 2. Every backup written before it exists has no `stocks`
+   key at all, which is why the field is optional: absent means "never used
+   the screen", not "used it and found nothing". */
+
+/**
+ * One company's published figures, as they stood when a snapshot was taken.
+ *
+ * Absolute figures are in the company's own reporting currency and its own
+ * units — whatever the filing says. Per-share figures are per share of the
+ * same class the price is quoted in. Nothing here is converted to euro: a
+ * ratio of two figures in the same currency is currency-free, and every
+ * number the screen ranks on is a ratio.
+ *
+ * A field that could not be sourced is `null` rather than 0. The difference
+ * matters: a company with no dividend has `dividend: 0`, a company whose
+ * dividend nobody could find has `null`, and only the second is excluded
+ * from the ranking rather than ranked last.
+ */
+export interface StockFacts {
+  /** as quoted, e.g. "AAPL", "OMV.VI" */
+  ticker: string;
+  name: string;
+  /** ISO 4217 of the price and of every absolute figure below */
+  currency: string;
+  sector: string;
+  /** last close */
+  price: number;
+  /** shares outstanding, diluted where the source offers it */
+  shares: number | null;
+  /** trailing twelve months, per share */
+  eps: number | null;
+  /** shareholders' equity per share */
+  bookValue: number | null;
+  /** trailing twelve months, per share */
+  revenuePerShare: number | null;
+  /** declared over the trailing twelve months, per share */
+  dividend: number | null;
+  /** absolute, trailing twelve months */
+  freeCashFlow: number | null;
+  /** absolute, trailing twelve months */
+  ebit: number | null;
+  /** absolute, trailing twelve months */
+  ebitda: number | null;
+  /** absolute, all interest-bearing debt */
+  totalDebt: number | null;
+  /** absolute, cash and equivalents */
+  cash: number | null;
+  /** absolute, total shareholders' equity */
+  equity: number | null;
+  /** a fraction per year, so 0.18 is 18% */
+  roe: number | null;
+  /** a fraction per year, averaged over whatever period the source used */
+  epsGrowth: number | null;
+  /** a fraction per year */
+  revenueGrowth: number | null;
+}
+
+/** Every company's figures as of one week. */
+export interface Snapshot {
+  /** ISO week, "YYYY-Www" — the screen is a weekly one and this is its date */
+  week: string;
+  /** ISO 8601 instant the figures were pulled */
+  takenAt: string;
+  /** free text: which API, which script run */
+  source: string;
+  /** true while the shipped illustration is still on screen */
+  sample: boolean;
+  facts: StockFacts[];
+}
+
+/** What the buyer wants out of a share, which is what fair value depends on. */
+export interface Assumptions {
+  /** % per year the buyer wants back — the rate future cash is discounted at */
+  requiredReturn: number;
+  /** % per year a business is assumed to grow forever, after the years below */
+  terminalGrowth: number;
+  /** how many years of explicit growth before the terminal value takes over */
+  years: number;
+  /** % per year — however good the past looked, growth is capped here */
+  growthCap: number;
+}
+
+export interface StockBook {
+  /** most recent week first; older weeks are dropped past KEEP_WEEKS */
+  snapshots: Snapshot[];
+  assumptions: Assumptions;
+  /** how many names the week's shortlist puts up front */
+  shortlist: number;
 }

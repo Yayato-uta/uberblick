@@ -1,6 +1,7 @@
 import type {
   Asset,
   AssetKind,
+  Assumptions,
   Data,
   Freq,
   Goal,
@@ -11,8 +12,12 @@ import type {
   Purchase,
   Reimb,
   ReimbExtra,
+  Snapshot,
+  StockBook,
 } from "../types";
-import { ASSET_KINDS, FREQ, SCHEMA_VERSION, emptyData } from "./constants";
+import { ASSET_KINDS, FREQ, SCHEMA_VERSION, emptyData, emptyStockBook } from "./constants";
+import { readSnapshot } from "./snapshot";
+import { KEEP_WEEKS } from "./valuation";
 import { parseNum, parsePos, uid } from "./format";
 import { fromYM, nowIdx, toYM } from "./month";
 
@@ -24,7 +29,11 @@ import { fromYM, nowIdx, toYM } from "./month";
      mirroring the expense's own frequency and dates;
 
    the later shape — still no schemaVersion, but repayments carry their own
-     freq/first/last and a list of lump sums.
+     freq/first/last and a list of lump sums;
+
+   schema 1 — everything above settled, but no `stocks`, because the weekly
+     stock screen did not exist yet. Absent means the screen was never used,
+     and it comes back with its defaults and no weeks of figures.
 
    An early repayment is brought forward by writing out what it always meant —
    freq, first and last copied from the item — so the figures come out
@@ -231,6 +240,61 @@ function normPurchase(raw: unknown): Purchase | null {
   };
 }
 
+/**
+ * The buyer's assumptions. Each is clamped to a range it can mean something
+ * in — a discount rate at or below the terminal growth rate values every
+ * company at infinity, so the pair are read together rather than one at a
+ * time.
+ */
+function normAssumptions(raw: unknown): Assumptions {
+  const base = emptyStockBook().assumptions;
+  if (!isObj(raw)) return base;
+  const clamp = (v: unknown, lo: number, hi: number, fallback: number): number => {
+    const n = parseNum(v);
+    if (!Number.isFinite(n) || n === 0) return fallback;
+    return Math.min(hi, Math.max(lo, n));
+  };
+  const requiredReturn = clamp(raw.requiredReturn, 1, 30, base.requiredReturn);
+  const terminalGrowth = clamp(raw.terminalGrowth, 0, 10, base.terminalGrowth);
+  return {
+    requiredReturn,
+    // a business that grows faster than money costs is worth infinity, forever
+    terminalGrowth: terminalGrowth >= requiredReturn ? base.terminalGrowth : terminalGrowth,
+    years: Math.round(clamp(raw.years, 1, 20, base.years)),
+    growthCap: clamp(raw.growthCap, 0, 50, base.growthCap),
+  };
+}
+
+/**
+ * The stock screen. A week whose figures no longer parse is dropped rather
+ * than kept half-read — it is a cache of something a script can fetch again,
+ * not a record only this file holds, which is what makes dropping it safe.
+ */
+function normStocks(raw: unknown): StockBook {
+  const base = emptyStockBook();
+  if (!isObj(raw)) return base;
+
+  const seen = new Set<string>();
+  const snapshots: Snapshot[] = [];
+  if (Array.isArray(raw.snapshots)) {
+    for (const s of raw.snapshots) {
+      const snap = readSnapshot(s);
+      // one snapshot per week, and the first written wins after the sort below
+      if (!snap || seen.has(snap.week)) continue;
+      seen.add(snap.week);
+      snapshots.push(snap);
+    }
+  }
+  snapshots.sort((a, b) => b.week.localeCompare(a.week));
+
+  const shortlist = Math.round(parseNum(raw.shortlist));
+  return {
+    snapshots: snapshots.slice(0, KEEP_WEEKS),
+    assumptions: normAssumptions(raw.assumptions),
+    shortlist: shortlist >= 1 && shortlist <= 50 ? shortlist : base.shortlist,
+  };
+}
+
 function normAsset(raw: unknown): Asset | null {
   if (!isObj(raw)) return null;
   const kind = ASSET_KIND_KEYS.includes(raw.kind as AssetKind)
@@ -290,6 +354,7 @@ export function migrate(raw: unknown): Data | null {
     odRate: parsePos(raw.odRate),
     horizon,
     sample: raw.sample === true,
+    stocks: normStocks(raw.stocks),
     schemaVersion: SCHEMA_VERSION,
   };
 

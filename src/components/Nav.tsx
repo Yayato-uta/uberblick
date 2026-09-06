@@ -3,6 +3,7 @@ import {
   CalendarClock,
   CalendarDays,
   LayoutGrid,
+  LineChart,
   List,
   MoreHorizontal,
   PiggyBank,
@@ -22,7 +23,8 @@ export type TabId =
   | "people"
   | "assets"
   | "goals"
-  | "ending";
+  | "ending"
+  | "stocks";
 
 export interface TabMeta {
   id: TabId;
@@ -42,6 +44,7 @@ export const TABS: TabMeta[] = [
   { id: "people", label: "Paid back to me", short: "Paid back", icon: Users, secondary: true },
   { id: "goals", label: "Saving for", short: "Saving for", icon: PiggyBank, secondary: true },
   { id: "ending", label: "Ends soon", short: "Ends soon", icon: CalendarClock, secondary: true },
+  { id: "stocks", label: "Undervalued", short: "Undervalued", icon: LineChart, secondary: true },
 ];
 
 export type TabCounts = Partial<Record<TabId, number>>;
