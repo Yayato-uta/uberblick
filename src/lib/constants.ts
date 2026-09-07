@@ -110,7 +110,13 @@ export function emptyData(): Data {
 
 /** An unused stock screen: the assumptions, and no week of figures yet. */
 export function emptyStockBook(): StockBook {
-  return { snapshots: [], assumptions: { ...DEFAULT_ASSUMPTIONS }, shortlist: 5 };
+  return {
+    snapshots: [],
+    assumptions: { ...DEFAULT_ASSUMPTIONS },
+    shortlist: 5,
+    auto: true,
+    lastFetch: "",
+  };
 }
 
 /**

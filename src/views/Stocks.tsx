@@ -19,6 +19,7 @@ import {
   BORDER_L,
   Btn,
   Callout,
+  Checkbox,
   Empty,
   Field,
   Figure,
@@ -73,6 +74,7 @@ export function Stocks({
   onRemove,
   onAssumptions,
   onShortlist,
+  onAuto,
 }: {
   book: StockBook;
   screened: ScreenedBook;
@@ -81,6 +83,7 @@ export function Stocks({
   onRemove: (ticker: string) => void;
   onAssumptions: (a: Assumptions) => void;
   onShortlist: (n: number) => void;
+  onAuto: (on: boolean) => void;
 }) {
   const [open, setOpen] = useState<Scored | null>(null);
   const [editing, setEditing] = useState<StockFacts | null>(null);
@@ -182,7 +185,7 @@ export function Stocks({
         </>
       )}
 
-      <Feed onImport={onImport} onAdd={() => setEditing(blankFacts())} />
+      <Feed book={book} onImport={onImport} onAdd={() => setEditing(blankFacts())} />
 
       <Detail
         row={open}
@@ -218,6 +221,7 @@ export function Stocks({
         book={book}
         onAssumptions={onAssumptions}
         onShortlist={onShortlist}
+        onAuto={onAuto}
         onClose={() => setSettings(false)}
       />
     </div>
@@ -549,19 +553,31 @@ function Bars<K extends string>({
   );
 }
 
-/** Where a week of figures comes from. */
-function Feed({ onImport, onAdd }: { onImport: (f: File) => void; onAdd: () => void }) {
+/** Where a week of figures comes from, and when it last came. */
+function Feed({
+  book,
+  onImport,
+  onAdd,
+}: {
+  book: StockBook;
+  onImport: (f: File) => void;
+  onAdd: () => void;
+}) {
   return (
     <Panel className="mt-8" accent="blue">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-xl">
-          <Label>Feeding it a week</Label>
+          <Label>Where the figures come from</Label>
           <p className="text-sm text-soft">
-            The app fetches nothing itself — it has never made a network call and this screen does
-            not change that. Run{" "}
-            <span className="font-mono text-xs">node tools/fetch-fundamentals.mjs</span> once a
-            week, then bring the file it writes in here. Importing a week replaces that week and
-            leaves the others alone.
+            {book.auto
+              ? "A job runs the fetch once a week and publishes the result beside the app; the app collects it in the background and files any week it hasn't already got. It asks its own address for a file, never a data provider — doing that from a page would mean putting an API key where anyone could read it."
+              : "Looking by itself is switched off. Run node tools/fetch-fundamentals.mjs yourself and bring the file in here."}
+          </p>
+          <p className="mt-2 font-mono text-xs text-soft">
+            {book.lastFetch
+              ? `Last looked ${new Date(book.lastFetch).toLocaleString("de-AT")}`
+              : "Hasn't looked yet"}
+            {" · a week already on the list is never overwritten by it"}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -745,12 +761,14 @@ function SettingsSheet({
   book,
   onAssumptions,
   onShortlist,
+  onAuto,
   onClose,
 }: {
   open: boolean;
   book: StockBook;
   onAssumptions: (a: Assumptions) => void;
   onShortlist: (n: number) => void;
+  onAuto: (on: boolean) => void;
   onClose: () => void;
 }) {
   const a = book.assumptions;
@@ -808,6 +826,19 @@ function SettingsSheet({
             onChange={(n) => onShortlist(Math.round(n))}
           />
         </Field>
+      </div>
+
+      <div className="mt-6 border-t border-rule pt-4">
+        <div className="u-label mb-2">Collecting the week</div>
+        <Checkbox checked={book.auto} onChange={onAuto} tone="blue">
+          Fetch a new week on its own
+        </Checkbox>
+        <p className="mt-2 text-xs text-soft">
+          The app's only network call: it asks its own address for the file the
+          scheduled job left there, at most twice a day, and files any week it hasn't
+          already got. Turn it off and nothing leaves the device — you bring the weeks
+          in by hand. Either way, a week already on the list is never overwritten.
+        </p>
       </div>
 
       {bad && (

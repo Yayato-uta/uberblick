@@ -15,6 +15,7 @@ import type { GoalRow, PotRow } from "./lib/derive";
 import { derive } from "./lib/derive";
 import { screenBook } from "./lib/valuation";
 import { addWeek, dropFacts, putFacts, readSnapshot } from "./lib/snapshot";
+import { dueACheck, fetchWeek, shouldTake } from "./lib/feed";
 import { emptyData } from "./lib/constants";
 import { eur, uid } from "./lib/format";
 import { nowIdx, toYM } from "./lib/month";
@@ -77,6 +78,33 @@ export default function App() {
   useEffect(() => {
     if (monthK > d.months.length - 1) setMonthK(d.months.length - 1);
   }, [d.months.length, monthK]);
+
+  /* Look for a new week of company figures, once the stored plan is in hand.
+     This is the app's only network call, it goes to its own origin, and it is
+     allowed to come back with nothing — offline is the normal case for a thing
+     that lives on a phone. `looked` keeps a re-render from asking twice.
+
+     Deliberately NOT gated on the Undervalued tab being open: the point is
+     that the week is already there when you go looking, not that opening a
+     screen starts a download you then wait for. */
+  const looked = useRef(false);
+  useEffect(() => {
+    if (!ready || looked.current || !dueACheck(data.stocks)) return;
+    looked.current = true;
+    void (async () => {
+      const week = await fetchWeek();
+      update((prev) => {
+        const stocks = { ...prev.stocks, lastFetch: new Date().toISOString() };
+        // a week already in the book is left alone — see shouldTake
+        return week && shouldTake(prev.stocks, week)
+          ? { ...prev, stocks: addWeek(stocks, week) }
+          : { ...prev, stocks };
+      });
+      if (week && shouldTake(data.stocks, week)) {
+        setNotice(`Week ${week.week} arrived on its own — ${week.facts.length} companies.`);
+      }
+    })();
+  }, [ready, data.stocks, update, setNotice]);
 
   /* ── item actions ── */
 
@@ -351,6 +379,9 @@ export default function App() {
       stocks: { ...prev.stocks, shortlist: Math.min(50, Math.max(1, shortlist)) },
     }));
 
+  const setAuto = (auto: boolean) =>
+    update((prev) => ({ ...prev, stocks: { ...prev.stocks, auto } }));
+
   /* ── data safety ── */
 
   const doExport = async () => {
@@ -589,6 +620,7 @@ export default function App() {
             onRemove={removeStock}
             onAssumptions={setAssumptions}
             onShortlist={setShortlist}
+            onAuto={setAuto}
           />
         )}
 

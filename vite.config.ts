@@ -41,7 +41,11 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // everything the app needs is precached; nothing is fetched at runtime
+        /* Everything the app needs to run is precached. stocks/latest.json is
+           deliberately NOT among these patterns: it is the one thing the app
+           asks the network for, a stale copy of it is worse than none, and the
+           week is stored on the device the moment it is read — so there is
+           nothing to serve offline that the app has not already kept. */
         globPatterns: ["**/*.{js,css,html,svg,png,ico,webmanifest,woff2}"],
         navigateFallback: "index.html",
         cleanupOutdatedCaches: true,

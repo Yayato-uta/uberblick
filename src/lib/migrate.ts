@@ -288,10 +288,14 @@ function normStocks(raw: unknown): StockBook {
   snapshots.sort((a, b) => b.week.localeCompare(a.week));
 
   const shortlist = Math.round(parseNum(raw.shortlist));
+  const lastFetch = str(raw.lastFetch);
   return {
     snapshots: snapshots.slice(0, KEEP_WEEKS),
     assumptions: normAssumptions(raw.assumptions),
     shortlist: shortlist >= 1 && shortlist <= 50 ? shortlist : base.shortlist,
+    // absent in a schema-2 backup, and looking by itself is the default
+    auto: raw.auto === undefined ? base.auto : raw.auto === true,
+    lastFetch: lastFetch && !Number.isNaN(Date.parse(lastFetch)) ? lastFetch : "",
   };
 }
 
