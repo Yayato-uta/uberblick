@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # the weekly figures job calls this after committing a new week: a push made
+  # with GITHUB_TOKEN deliberately does not trigger `push` above, so without
+  # this the new week would sit in the repo and never reach the site
+  workflow_call:
 
 permissions:
   contents: read

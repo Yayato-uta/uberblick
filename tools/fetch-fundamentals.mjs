@@ -32,7 +32,7 @@
  * be sourced is written as null, never as zero.
  */
 
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { argv, env, exit } from "node:process";
 
 /* ── the fields the screen ranks on ────────────────────────────────────────
@@ -294,6 +294,10 @@ async function main() {
     console.error("Nothing was fetched, so nothing was written.");
     exit(1);
   }
+
+  // --out may name a directory that isn't there yet, e.g. public/stocks/
+  const dir = out.replace(/[/\\][^/\\]*$/, "");
+  if (dir && dir !== out) await mkdir(dir, { recursive: true });
 
   await writeFile(out, `${JSON.stringify({ week, takenAt: now.toISOString(), source, facts }, null, 2)}\n`);
   console.log(`\nWrote ${facts.length} companies to ${out} for week ${week}.`);

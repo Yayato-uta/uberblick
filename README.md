@@ -62,12 +62,16 @@ src/
     constants.ts      kinds, frequencies, categories, asset kinds, seed data
     valuation.ts      fair value, the yields, the ranking — the stock screen
     snapshot.ts       reading a week of company figures in, and keeping them
+    feed.ts           the one network call: collecting the published week
   hooks/              data, theme, media queries, install prompt
   components/         shared UI, sheets, the custom month picker, navigation
   views/              the eight screens
 tools/
-  fetch-fundamentals.mjs   pulls a week of figures; run it yourself, weekly
+  fetch-fundamentals.mjs   pulls a week of figures — run by CI, or by you
   watchlist.json           the companies that week covers
+.github/workflows/
+  stocks.yml               runs that script weekly and publishes the result
+  deploy.yml               builds and puts it on Pages
 ```
 
 The arithmetic lives entirely in `lib/`. Views are a display layer over
@@ -135,10 +139,36 @@ The assumptions behind all of it — the return you want, terminal growth, the
 forecast horizon, the growth cap — are yours to set, and every valuation moves
 when you change them.
 
-### Feeding it a week
+### Where a week comes from
 
-The app fetches nothing. Run the script yourself, once a week, and import what
-it writes:
+Once a week, on a schedule, `.github/workflows/stocks.yml` runs the fetch
+script, commits the result to `public/stocks/latest.json`, and redeploys. The
+app collects that file from its own origin in the background and files any week
+it hasn't already got — so the current week is simply there when you open the
+screen.
+
+**This needs one repository secret, `FMP_API_KEY`** (Settings → Secrets and
+variables → Actions). Without it the workflow stops with a message rather than
+committing an empty week over a good one. A free
+[Financial Modeling Prep](https://financialmodelingprep.com) key covers the
+endpoints used. Edit `tools/watchlist.json` to choose the companies.
+
+The fetch lives in CI rather than in the page for one reason: calling a data
+provider from the browser would mean shipping the API key inside a public page,
+where the first person to open the sources has it.
+
+**A week already on the list is never overwritten by the collector.** That is
+what protects a week you typed companies into yourself from being replaced by
+the watchlist's version of the same seven days. Correcting a week stays
+deliberate — *Import a week* still overwrites, because you asked it to. The one
+exception is the shipped illustration, which always gives way.
+
+Turn the whole thing off under **What I want out of a share → Fetch a new week
+on its own**, and nothing leaves the device.
+
+### Feeding it a week yourself
+
+You never have to wait for the schedule. Run the same script by hand:
 
 ```bash
 node tools/fetch-fundamentals.mjs --key YOUR_KEY
@@ -199,10 +229,15 @@ System.Drawing). The favicon is hand-written SVG.
 ## Offline
 
 The service worker precaches the built assets, so after the first load the app
-works with no connection at all. Nothing is fetched from a network at runtime —
-there are no web fonts, no CDNs and no telemetry.
+works with no connection at all. There are no web fonts, no CDNs and no
+telemetry, and no part of the plan is ever sent anywhere.
 
-The stock screen does not change that. `tools/fetch-fundamentals.mjs` runs on
-your machine and writes a file; the app only ever reads a file you hand it,
-through the same file picker as a backup restore. The app itself has still never
-made a network call.
+There is exactly **one** runtime network call, and only when the stock screen's
+collector is switched on: a request to the app's own address for
+`stocks/latest.json`, at most twice a day. It carries nothing with it, it goes
+to no third party, and it is allowed to fail — offline, a 404, a workflow
+nobody has given a key to and a dead provider all look the same from inside the
+app, and all of them leave the screen working on the weeks it already holds.
+Those weeks live on the device, not in a cache, which is why that file is
+deliberately left out of the precache: a stale copy of it would be worse than
+none.

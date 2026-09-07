@@ -284,4 +284,13 @@ export interface StockBook {
   assumptions: Assumptions;
   /** how many names the week's shortlist puts up front */
   shortlist: number;
+  /**
+   * Whether the app looks for a new week by itself. This is the ONE place the
+   * app touches a network, and it is a request to its own origin for a file
+   * a scheduled job left there — never to a data provider, which would mean
+   * shipping an API key inside the page for anyone to read.
+   */
+  auto: boolean;
+  /** ISO instant of the last look, "" for never. Not the age of the figures. */
+  lastFetch: string;
 }

@@ -1,0 +1,92 @@
+name: Fetch the week's company figures
+
+# The screen is a weekly one, so this is what makes it weekly without anybody
+# remembering to do it. It runs the same script you would run by hand, commits
+# what came back, and then calls the deploy workflow — because a push made with
+# GITHUB_TOKEN does not set off another workflow's `push` trigger, which is a
+# loop guard rather than something going wrong.
+#
+# The app collects the published file from its own origin. That is the only
+# reason this lives here rather than in the page: fetching a data provider from
+# the browser would mean shipping the API key inside a public page, where the
+# first person to open the sources has it.
+#
+# Needs one repository secret, FMP_API_KEY. Without it the run stops with a
+# message rather than committing an empty week over a good one.
+
+on:
+  schedule:
+    # Mondays 06:00 UTC, after every market has closed on the week before
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# never two of these at once: they both commit to main
+concurrency:
+  group: stocks
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      # `secrets` cannot be read in an `if:`, so it is checked in the shell
+      - name: Check there is a key to fetch with
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: |
+          if [ -z "$FMP_API_KEY" ]; then
+            echo "::error::No FMP_API_KEY secret is set, so there is nothing to fetch with."
+            echo "::error::Add one under Settings → Secrets and variables → Actions."
+            echo "::error::A free key from financialmodelingprep.com covers the endpoints used."
+            exit 1
+          fi
+
+      - name: Fetch the week
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+        run: node tools/fetch-fundamentals.mjs --out public/stocks/latest.json
+
+      # A week with nothing in it would replace a good one with a blank page.
+      - name: Check something actually came back
+        run: |
+          count=$(node -e "process.stdout.write(String(require('./public/stocks/latest.json').facts.length))")
+          echo "Fetched $count companies."
+          if [ "$count" -lt 1 ]; then
+            echo "::error::The fetch returned no companies, so nothing will be committed."
+            exit 1
+          fi
+
+      - name: Commit it
+        id: commit
+        run: |
+          if git diff --quiet -- public/stocks/latest.json; then
+            echo "Nothing changed since last time."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          week=$(node -e "process.stdout.write(require('./public/stocks/latest.json').week)")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/stocks/latest.json
+          git commit -m "Company figures for week ${week}"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+  # publish the new week, since the commit above cannot trigger deploy itself
+  deploy:
+    needs: fetch
+    if: needs.fetch.outputs.changed == 'true'
+    uses: ./.github/workflows/deploy.yml
