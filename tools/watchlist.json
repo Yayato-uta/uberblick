@@ -1,0 +1,25 @@
+{
+  "note": "The companies the weekly screen ranks. A watchlist is not a recommendation — it is the universe the ranking is relative to, and what you leave out changes what comes top. Put in enough names, and enough different sectors, that being cheapest of them means something.",
+  "tickers": [
+    "AAPL",
+    "MSFT",
+    "GOOGL",
+    "JNJ",
+    "PFE",
+    "XOM",
+    "CVX",
+    "JPM",
+    "KO",
+    "PG",
+    "VZ",
+    "INTC",
+    "SAP.DE",
+    "SIE.DE",
+    "ALV.DE",
+    "BAS.DE",
+    "OMV.VI",
+    "EBS.VI",
+    "VOE.VI",
+    "NESN.SW"
+  ]
+}

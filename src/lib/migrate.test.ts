@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { migrate } from "./migrate";
-import { SCHEMA_VERSION } from "./constants";
+import { SCHEMA_VERSION, emptyStockBook } from "./constants";
+import { KEEP_WEEKS } from "./valuation";
 
 /* A file exported by the earliest single-file version: no schemaVersion, no
    goals or assets arrays, no overdraft settings, and a repayment given as bare
@@ -670,3 +671,92 @@ describe("money paid ahead", () => {
   });
 });
 
+/* The stock screen arrived in schema 2. Every backup before it has no `stocks`
+   key, and the screen has to come back with its defaults rather than being the
+   thing that makes an old plan refuse to open. */
+describe("the stock screen coming back from a backup", () => {
+  const week = (w: string, price = 100) => ({
+    week: w,
+    takenAt: "2026-09-01T00:00:00.000Z",
+    source: "test",
+    facts: [{ ticker: "EXA", name: "Example", currency: "EUR", price, eps: 5 }],
+  });
+
+  it("gives a plan written before the screen existed its defaults", () => {
+    const d = migrate(v0)!;
+    expect(d.stocks).toEqual(emptyStockBook());
+  });
+
+  it("brings a week of figures back whole", () => {
+    const d = migrate({ ...v0, stocks: { snapshots: [week("2026-W35")] } })!;
+    expect(d.stocks.snapshots).toHaveLength(1);
+    expect(d.stocks.snapshots[0].facts[0].ticker).toBe("EXA");
+    // absent means unpublished, and it must not come back as zero
+    expect(d.stocks.snapshots[0].facts[0].bookValue).toBeNull();
+  });
+
+  it("puts the weeks back in order, newest first", () => {
+    const d = migrate({
+      ...v0,
+      stocks: { snapshots: [week("2026-W33"), week("2026-W35"), week("2026-W34")] },
+    })!;
+    expect(d.stocks.snapshots.map((s) => s.week)).toEqual(["2026-W35", "2026-W34", "2026-W33"]);
+  });
+
+  it("forgets weeks past the ones worth keeping", () => {
+    const snapshots = Array.from({ length: KEEP_WEEKS + 5 }, (_, i) =>
+      week(`2026-W${String(i + 1).padStart(2, "0")}`),
+    );
+    expect(migrate({ ...v0, stocks: { snapshots } })!.stocks.snapshots).toHaveLength(KEEP_WEEKS);
+  });
+
+  it("drops a week that no longer parses rather than refusing the plan", () => {
+    const d = migrate({ ...v0, stocks: { snapshots: [week("2026-W35"), "rubbish", null] } })!;
+    expect(d.items).toHaveLength(2);
+    expect(d.stocks.snapshots).toHaveLength(1);
+  });
+
+  it("keeps the assumptions the owner set", () => {
+    const d = migrate({
+      ...v0,
+      stocks: { snapshots: [], assumptions: { requiredReturn: 12, terminalGrowth: 1, years: 8, growthCap: 20 }, shortlist: 10 },
+    })!;
+    expect(d.stocks.assumptions).toEqual({
+      requiredReturn: 12,
+      terminalGrowth: 1,
+      years: 8,
+      growthCap: 20,
+    });
+    expect(d.stocks.shortlist).toBe(10);
+  });
+
+  /* A discount rate at or below the terminal growth rate values every company
+     on earth at infinity, so the pair are refused together rather than one at
+     a time. */
+  it("refuses growth that outruns the discount rate forever", () => {
+    const d = migrate({
+      ...v0,
+      stocks: { assumptions: { requiredReturn: 4, terminalGrowth: 6 } },
+    })!;
+    expect(d.stocks.assumptions.requiredReturn).toBe(4);
+    expect(d.stocks.assumptions.terminalGrowth).toBe(emptyStockBook().assumptions.terminalGrowth);
+  });
+
+  it("pulls a nonsensical assumption back into a range it can mean something in", () => {
+    const d = migrate({
+      ...v0,
+      stocks: { assumptions: { requiredReturn: 900, years: -3, growthCap: 400 }, shortlist: 9999 },
+    })!;
+    expect(d.stocks.assumptions.requiredReturn).toBe(30);
+    expect(d.stocks.assumptions.years).toBe(1);
+    expect(d.stocks.assumptions.growthCap).toBe(50);
+    expect(d.stocks.shortlist).toBe(emptyStockBook().shortlist);
+  });
+
+  it("is not fooled into reading the screen as a plan or the other way about", () => {
+    // a stock file has no items, so it is not a plan and must be refused
+    expect(migrate({ facts: [{ ticker: "EXA", price: 10 }] })).toBeNull();
+    // and a plan with junk where the screen goes still opens
+    expect(migrate({ ...v0, stocks: "not a book" })!.stocks).toEqual(emptyStockBook());
+  });
+});

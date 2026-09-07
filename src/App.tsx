@@ -10,9 +10,11 @@ import {
   Sun,
   Upload,
 } from "lucide-react";
-import type { Asset, Goal, Item, Pot, Purchase } from "./types";
+import type { Asset, Assumptions, Goal, Item, Pot, Purchase, StockFacts } from "./types";
 import type { GoalRow, PotRow } from "./lib/derive";
 import { derive } from "./lib/derive";
+import { screenBook } from "./lib/valuation";
+import { addWeek, dropFacts, putFacts, readSnapshot } from "./lib/snapshot";
 import { emptyData } from "./lib/constants";
 import { eur, uid } from "./lib/format";
 import { nowIdx, toYM } from "./lib/month";
@@ -33,6 +35,7 @@ import { People } from "./views/People";
 import { Assets } from "./views/Assets";
 import { Goals } from "./views/Goals";
 import { Ending } from "./views/Ending";
+import { Stocks } from "./views/Stocks";
 
 /** Edits in a session before the app suggests taking a backup. */
 const NUDGE_AFTER = 8;
@@ -66,6 +69,9 @@ export default function App() {
     () => derive(data, start, potMonth, peopleMonth),
     [data, start, potMonth, peopleMonth],
   );
+  /* Ranking a watchlist has nothing to do with the cash-flow forecast and
+     costs nothing when the plan changes, so it is memoised on its own. */
+  const screened = useMemo(() => screenBook(data.stocks), [data.stocks]);
 
   // the horizon can shrink under the selected month
   useEffect(() => {
@@ -303,6 +309,48 @@ export default function App() {
   const dropPurchase = (x: Purchase) =>
     update((prev) => ({ ...prev, purchases: prev.purchases.filter((p) => p.id !== x.id) }));
 
+  /* ── the weekly stock screen ── */
+
+  /**
+   * Bring in a week the fetch script wrote. It is read with the screen's own
+   * validator rather than the backup one: the two files look nothing alike,
+   * and importing one where the other belongs must fail cleanly rather than
+   * half-succeed.
+   */
+  const importStockWeek = async (file: File) => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await file.text());
+    } catch {
+      setNotice("That file isn't readable JSON.");
+      return;
+    }
+    const snapshot = readSnapshot(parsed);
+    if (!snapshot) {
+      setNotice(
+        "That doesn't look like a week of company figures. It needs a list of companies, each with a ticker and a price.",
+      );
+      return;
+    }
+    update((prev) => ({ ...prev, stocks: addWeek(prev.stocks, snapshot) }));
+    setNotice(`Week ${snapshot.week} loaded — ${snapshot.facts.length} companies.`);
+  };
+
+  const saveStock = (facts: StockFacts) =>
+    update((prev) => ({ ...prev, stocks: putFacts(prev.stocks, facts) }));
+
+  const removeStock = (ticker: string) =>
+    update((prev) => ({ ...prev, stocks: dropFacts(prev.stocks, ticker) }));
+
+  const setAssumptions = (assumptions: Assumptions) =>
+    update((prev) => ({ ...prev, stocks: { ...prev.stocks, assumptions } }));
+
+  const setShortlist = (shortlist: number) =>
+    update((prev) => ({
+      ...prev,
+      stocks: { ...prev.stocks, shortlist: Math.min(50, Math.max(1, shortlist)) },
+    }));
+
   /* ── data safety ── */
 
   const doExport = async () => {
@@ -357,6 +405,7 @@ export default function App() {
     assets: data.assets.length,
     goals: data.goals.length,
     ending: d.ending.length,
+    stocks: screened.rows.length,
   };
 
   const nudge = ready && !nudgeHidden && edits >= NUDGE_AFTER;
@@ -531,6 +580,17 @@ export default function App() {
           />
         )}
         {tab === "ending" && <Ending d={d} />}
+        {tab === "stocks" && (
+          <Stocks
+            book={data.stocks}
+            screened={screened}
+            onImport={importStockWeek}
+            onSaveFacts={saveStock}
+            onRemove={removeStock}
+            onAssumptions={setAssumptions}
+            onShortlist={setShortlist}
+          />
+        )}
 
         <footer className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-rule pt-4 font-mono text-xs text-soft">
           <div>

@@ -316,12 +316,16 @@ export function Select({ className, children, ...rest }: SelectHTMLAttributes<HT
  * half-finished "-12," without snapping the value back under your fingers.
  */
 export function NumInput({
+  id,
   value,
   onChange,
   className,
   allowNegative = true,
   ariaLabel,
 }: {
+  /* Field passes this in so its <label> has something to point at. Without it
+     the label is decoration and a screen reader announces an unnamed box. */
+  id?: string;
   value: number;
   onChange: (n: number) => void;
   className?: string;
@@ -345,6 +349,7 @@ export function NumInput({
 
   return (
     <input
+      id={id}
       aria-label={ariaLabel}
       // "text" rather than "decimal" so the minus key is reachable on a phone
       inputMode={allowNegative ? "text" : "decimal"}
